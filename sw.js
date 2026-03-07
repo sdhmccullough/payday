@@ -1,5 +1,5 @@
 // Service Worker — network-first for updates, cache for offline
-const CACHE_NAME = 'nannypay-v8';
+const CACHE_NAME = 'nannypay-v9';
 const ASSETS = [
   './',
   './index.html',
