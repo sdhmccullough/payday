@@ -254,7 +254,8 @@
         remoteState.weekStart = currentWeek;
       }
 
-      // Ensure all fields
+      // Ensure all fields (Firebase strips empty objects/arrays)
+      if (!remoteState.days) remoteState.days = {};
       if (!remoteState.cash) remoteState.cash = {};
       if (!remoteState.cashTransactions) remoteState.cashTransactions = [];
       if (!remoteState.history) remoteState.history = [];
