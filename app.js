@@ -461,6 +461,31 @@
     return total;
   }
 
+  // Calculate which bills would be used for a given amount
+  // Returns { breakdown: {100: 5, 20: 2, ...}, actualAmount: 540, remainder: 0 }
+  function calculateBillBreakdown(amount) {
+    const breakdown = {};
+    let remaining = amount;
+    for (const bill of BILLS) {
+      const available = state.cash[bill] || 0;
+      const needed = Math.floor(remaining / bill);
+      const used = Math.min(needed, available);
+      if (used > 0) {
+        breakdown[bill] = used;
+        remaining -= used * bill;
+      }
+    }
+    return { breakdown, actualAmount: amount - remaining, remainder: remaining };
+  }
+
+  // Format a bill breakdown for display
+  function formatBreakdown(breakdown) {
+    return BILLS
+      .filter(b => breakdown[b] > 0)
+      .map(b => `${breakdown[b]}×$${b}`)
+      .join(' + ');
+  }
+
   function renderCash() {
     cashGridEl.innerHTML = '';
     BILLS.forEach(bill => {
@@ -497,10 +522,12 @@
       const div = document.createElement('div');
       div.className = 'txn-card';
       const isDeposit = txn.type === 'deposit';
+      const breakdownHtml = txn.breakdown ? `<span class="txn-breakdown">${formatBreakdown(txn.breakdown)}</span>` : '';
       div.innerHTML = `
         <div class="txn-info">
           <span class="txn-label">${txn.label}</span>
           <span class="txn-date">${txn.date}</span>
+          ${breakdownHtml}
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="txn-amount ${isDeposit ? 'deposit' : 'withdrawal'}">
@@ -654,9 +681,21 @@
     const fri = new Date(sat);
     fri.setDate(sat.getDate() + 6);
 
-    const cashAvailable = getCashTotal();
-    const amountPaid = Math.min(total, cashAvailable);
-    const shortfall = total - amountPaid;
+    // Calculate exactly which bills we can use
+    const { breakdown, actualAmount, remainder } = calculateBillBreakdown(total);
+    const shortfall = total - actualAmount;
+
+    // If we can't make the full amount, confirm with user
+    if (shortfall > 0) {
+      const breakdownStr = actualAmount > 0 ? formatBreakdown(breakdown) : 'none';
+      const proceed = confirm(
+        `Can't make exact change for $${total.toFixed(2)}.\n\n` +
+        `Bills available: ${breakdownStr} = $${actualAmount.toFixed(2)}\n` +
+        `Short: $${shortfall.toFixed(2)} (will carry over)\n\n` +
+        `Proceed with $${actualAmount.toFixed(2)} payment?`
+      );
+      if (!proceed) return;
+    }
 
     const entry = {
       id: generateId(),
@@ -668,28 +707,28 @@
       bonus: bonus,
       carryover: carryover,
       total: total,
-      amountPaid: amountPaid,
+      amountPaid: actualAmount,
       shortfall: shortfall,
       paidDate: formatDateFull(new Date())
     };
 
     state.history.push(entry);
 
-    if (amountPaid > 0) {
+    if (actualAmount > 0) {
       state.cashTransactions.push({
         id: generateId(),
         type: 'withdrawal',
         label: `Payment: ${entry.weekLabel}`,
-        amount: amountPaid,
+        amount: actualAmount,
+        breakdown: breakdown,
         date: entry.paidDate
       });
     }
 
-    let remaining = amountPaid;
+    // Deduct the actual bills used
     for (const bill of BILLS) {
-      while (remaining >= bill && state.cash[bill] > 0) {
-        state.cash[bill]--;
-        remaining -= bill;
+      if (breakdown[bill]) {
+        state.cash[bill] -= breakdown[bill];
       }
     }
 
@@ -706,7 +745,10 @@
     renderCashTransactions();
     renderHistory();
 
-    let msg = `Saved! $${amountPaid.toFixed(2)} paid from cash.`;
+    let msg = `Saved! $${actualAmount.toFixed(2)} paid from cash.`;
+    if (actualAmount > 0) {
+      msg += `\n\nBills used: ${formatBreakdown(breakdown)}`;
+    }
     if (shortfall > 0) {
       msg += `\n\nShort $${shortfall.toFixed(2)} — this will carry over to next week.`;
     }
