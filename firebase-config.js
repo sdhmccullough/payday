@@ -20,9 +20,9 @@ const auth = firebase.auth();
 const db = firebase.database();
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Sign in with Google — uses redirect (works on mobile)
+// Sign in with Google
 function signInWithGoogle() {
-  return auth.signInWithRedirect(googleProvider);
+  return auth.signInWithPopup(googleProvider);
 }
 
 // Sign out

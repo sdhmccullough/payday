@@ -844,9 +844,12 @@
     // Auth state listener
     auth.onAuthStateChanged(onAuthReady);
 
-    // Sign in button (redirect-based — page navigates to Google and back)
+    // Sign in button
     googleSignInBtn.addEventListener('click', () => {
-      signInWithGoogle();
+      signInWithGoogle().catch(err => {
+        console.error('Sign-in failed:', err);
+        alert('Sign-in failed. Please try again.');
+      });
     });
 
     // Sign out button
