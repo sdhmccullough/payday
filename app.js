@@ -135,6 +135,7 @@
   }
 
   function calcWeekTotal() {
+    if (!state.days) state.days = {};
     let totalHours = 0;
     let fuelDays = 0;
     DAYS.forEach((_, i) => {
@@ -187,6 +188,7 @@
           parsed.days = {};
           parsed.weekStart = currentWeek;
         }
+        if (!parsed.days) parsed.days = {};
         if (!parsed.cash) parsed.cash = {};
         if (!parsed.cashTransactions) parsed.cashTransactions = [];
         if (!parsed.history) parsed.history = [];
@@ -377,6 +379,7 @@
   }
 
   function renderTimesheet() {
+    if (!state.days) state.days = {};
     timesheetEl.innerHTML = '';
     const sat = getCurrentWeekSaturday();
 
