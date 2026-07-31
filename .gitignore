@@ -1,0 +1,11 @@
+# Firebase
+.firebase/
+firebase-debug.log
+.env
+.env.*
+
+# Dependencies
+node_modules/
+
+# Local tool settings
+.claude/settings.local.json
