@@ -343,28 +343,38 @@
     storageKey = 'payday:' + user.uid;
     localStorage.removeItem(LEGACY_STORAGE_KEY); // pre-namespacing cache
 
-    // Look up household
-    let hid = await getHouseholdId(user.uid);
-    if (!hid) {
-      // First time — create a household
-      await createHousehold(user.uid, user.email);
-      hid = user.uid;
+    try {
+      // Look up household
+      let hid = await getHouseholdId(user.uid);
+      if (!hid) {
+        // First time — create a household
+        await createHousehold(user.uid, user.email);
+        hid = user.uid;
+      }
+      householdId = hid;
+      householdCodeEl.textContent = householdId;
+
+      // Offline-first: render this household's cached snapshot (if any) until
+      // the live listener delivers fresh data.
+      state = reconcileWeek(normalizeState(loadCachedState(hid) || defaultState()));
+      refreshUI();
+
+      // Set up Firebase state reference
+      stateRef = getStateRef(householdId);
+
+      // Start listening for real-time updates
+      startFirebaseListener();
+
+      showApp();
+    } catch (err) {
+      // Without this, a failed household lookup strands an authenticated
+      // user on the sign-in overlay with no explanation.
+      console.error('Household setup failed:', err);
+      setSyncStatus('offline');
+      alert('Signed in, but your household could not be loaded' +
+        (err && err.code ? ' (' + err.code + ')' : '') +
+        '. Check your connection and reopen the app.');
     }
-    householdId = hid;
-    householdCodeEl.textContent = householdId;
-
-    // Offline-first: render this household's cached snapshot (if any) until
-    // the live listener delivers fresh data.
-    state = reconcileWeek(normalizeState(loadCachedState(hid) || defaultState()));
-    refreshUI();
-
-    // Set up Firebase state reference
-    stateRef = getStateRef(householdId);
-
-    // Start listening for real-time updates
-    startFirebaseListener();
-
-    showApp();
   }
 
   // ============================
@@ -881,11 +891,22 @@
     // Auth state listener
     auth.onAuthStateChanged(onAuthReady);
 
+    // Complete a redirect-based sign-in if we're returning from one
+    // (the fallback path in signInWithGoogle). Success flows through
+    // onAuthStateChanged; only failures need surfacing here.
+    auth.getRedirectResult().catch(err => {
+      console.error('Redirect sign-in failed:', err);
+      alert('Sign-in failed' + (err && err.code ? ' (' + err.code + ')' : '') + '. Please try again.');
+    });
+
     // Sign in button
     googleSignInBtn.addEventListener('click', () => {
       signInWithGoogle().catch(err => {
+        // Closing the popup or double-tapping the button isn't an error.
+        if (err && (err.code === 'auth/popup-closed-by-user' ||
+                    err.code === 'auth/cancelled-popup-request')) return;
         console.error('Sign-in failed:', err);
-        alert('Sign-in failed. Please try again.');
+        alert('Sign-in failed' + (err && err.code ? ' (' + err.code + ')' : '') + '. Please try again.');
       });
     });
 

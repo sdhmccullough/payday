@@ -3,7 +3,10 @@
 
 const firebaseConfig = {
   apiKey: "AIzaSyBeqSwXhYjFmHpUcoR8e_EB0NV0l0zLG94",
-  authDomain: "payday-daf05.firebaseapp.com",
+  // Same-origin auth handler (served by Firebase Hosting at /__/auth/*).
+  // Cross-origin firebaseapp.com breaks redirect sign-in under third-party
+  // storage partitioning (Safari ITP etc.).
+  authDomain: "payday-daf05.web.app",
   databaseURL: "https://payday-daf05-default-rtdb.firebaseio.com",
   projectId: "payday-daf05",
   storageBucket: "payday-daf05.firebasestorage.app",
@@ -20,9 +23,16 @@ const auth = firebase.auth();
 const db = firebase.database();
 const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Sign in with Google
+// Sign in with Google. Popup first (keeps SPA state); fall back to a full
+// redirect where popups can't work — installed PWAs and in-app browsers.
 function signInWithGoogle() {
-  return auth.signInWithPopup(googleProvider);
+  return auth.signInWithPopup(googleProvider).catch(err => {
+    if (err && (err.code === 'auth/popup-blocked' ||
+                err.code === 'auth/operation-not-supported-in-this-environment')) {
+      return auth.signInWithRedirect(googleProvider);
+    }
+    throw err;
+  });
 }
 
 // Sign out
