@@ -10,7 +10,7 @@
   const DEFAULT_END   = '17:00';
   const MINUTES = ['00', '15', '30', '45'];
   const BILLS = [100, 50, 20, 10, 5];
-  const STORAGE_KEY = 'nannyPay';
+  const LEGACY_STORAGE_KEY = 'nannyPay';
 
   // --- DOM refs ---
   const signInOverlay     = document.getElementById('sign-in-overlay');
@@ -53,10 +53,10 @@
   let householdId = null;
   let stateRef = null;
   let unsubscribe = null; // Firebase listener cleanup
-  let isSyncing = false;  // Flag to prevent echo writes
+  let storageKey = null;  // per-uid localStorage key, set once signed in
 
   // --- State ---
-  let state = loadState();
+  let state = defaultState();
 
   // ============================
   //  HELPERS
@@ -80,11 +80,20 @@
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
+  // Local-calendar date key. Never toISOString() here: that converts to UTC
+  // first, which shifts the date across midnight for UTC+ timezones and makes
+  // two household members in different zones fight over weekStart.
+  function toLocalDateKey(d) {
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
   function dateKey(index) {
     const sat = getCurrentWeekSaturday();
     const d = new Date(sat);
     d.setDate(sat.getDate() + index);
-    return d.toISOString().slice(0, 10);
+    return toLocalDateKey(d);
   }
 
   function calcHours(start, end) {
@@ -168,45 +177,70 @@
     return {
       hourlyRate: 22,
       fuelRate: 10,
-      weekStart: getCurrentWeekSaturday().toISOString().slice(0, 10),
+      weekStart: toLocalDateKey(getCurrentWeekSaturday()),
       days: {},
       cash: cash,
       cashTransactions: [],
       history: [],
+      archivedWeeks: {},
       carryover: 0,
       bonus: 0
     };
   }
 
-  function loadState() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const currentWeek = getCurrentWeekSaturday().toISOString().slice(0, 10);
-        if (parsed.weekStart !== currentWeek) {
-          parsed.days = {};
-          parsed.weekStart = currentWeek;
-        }
-        if (!parsed.days) parsed.days = {};
-        if (!parsed.cash) parsed.cash = {};
-        if (!parsed.cashTransactions) parsed.cashTransactions = [];
-        if (!parsed.history) parsed.history = [];
-        if (parsed.carryover === undefined) parsed.carryover = 0;
-        if (parsed.bonus === undefined) parsed.bonus = 0;
-        BILLS.forEach(b => { if (parsed.cash[b] === undefined) parsed.cash[b] = 0; });
-        return parsed;
+  // Backfill fields Firebase strips (empty objects/arrays) or old caches lack.
+  function normalizeState(s) {
+    if (!s.days) s.days = {};
+    if (!s.cash) s.cash = {};
+    if (!s.cashTransactions) s.cashTransactions = [];
+    if (!s.history) s.history = [];
+    if (!s.archivedWeeks) s.archivedWeeks = {};
+    if (s.carryover === undefined) s.carryover = 0;
+    if (s.bonus === undefined) s.bonus = 0;
+    BILLS.forEach(b => { if (s.cash[b] === undefined) s.cash[b] = 0; });
+    return s;
+  }
+
+  // Roll the week forward if weekStart is stale. Unpaid entries are archived,
+  // never deleted — Save & Pay already clears days/bonus, so anything still
+  // here at rollover is money the household hasn't settled yet.
+  function reconcileWeek(s) {
+    const currentWeek = toLocalDateKey(getCurrentWeekSaturday());
+    if (s.weekStart && s.weekStart !== currentWeek) {
+      if (Object.keys(s.days).length > 0 || (s.bonus || 0) > 0) {
+        s.archivedWeeks[s.weekStart] = { days: s.days, bonus: s.bonus || 0 };
       }
-    } catch (_) { /* ignore */ }
-    return defaultState();
+      s.days = {};
+      s.bonus = 0;
+    }
+    s.weekStart = currentWeek;
+    return s;
+  }
+
+  // Per-uid cache; envelope ties the snapshot to the household it came from
+  // so one account's data can never seed another account's household.
+  function loadCachedState(hid) {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return null;
+      const envelope = JSON.parse(raw);
+      if (envelope.householdId !== hid || !envelope.state) return null;
+      return envelope.state;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function persistLocal() {
+    if (!storageKey) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ householdId: householdId, state: state }));
+    } catch (_) { /* quota exceeded / private mode — Firebase remains source of truth */ }
   }
 
   function saveState() {
-    // Always save to localStorage as offline cache
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-    // Sync to Firebase if connected
-    if (stateRef && !isSyncing) {
+    persistLocal();
+    if (stateRef) {
       setSyncStatus('syncing');
       stateRef.set(state)
         .then(() => setSyncStatus('synced'))
@@ -237,48 +271,31 @@
 
   // Listen for real-time updates from Firebase
   function startFirebaseListener() {
-    if (unsubscribe) unsubscribe();
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     if (!stateRef) return;
 
-    const callback = stateRef.on('value', (snapshot) => {
+    // Capture the ref: stateRef is reassigned when switching households, and
+    // the teardown must detach from the ref it attached to, not the new one.
+    const ref = stateRef;
+
+    const callback = ref.on('value', (snapshot) => {
       const remoteState = snapshot.val();
       if (!remoteState) {
-        // No data in Firebase yet — push our local state
-        stateRef.set(state);
+        // No data in Firebase yet — seed it with our local state
+        ref.set(state);
         setSyncStatus('synced');
         return;
       }
 
-      // Ensure week is current
-      const currentWeek = getCurrentWeekSaturday().toISOString().slice(0, 10);
-      if (remoteState.weekStart !== currentWeek) {
-        remoteState.days = {};
-        remoteState.weekStart = currentWeek;
-      }
-
-      // Ensure all fields (Firebase strips empty objects/arrays)
-      if (!remoteState.days) remoteState.days = {};
-      if (!remoteState.cash) remoteState.cash = {};
-      if (!remoteState.cashTransactions) remoteState.cashTransactions = [];
-      if (!remoteState.history) remoteState.history = [];
-      if (remoteState.carryover === undefined) remoteState.carryover = 0;
-      if (remoteState.bonus === undefined) remoteState.bonus = 0;
-      BILLS.forEach(b => { if (remoteState.cash[b] === undefined) remoteState.cash[b] = 0; });
-
-      // Update local state
-      isSyncing = true;
-      state = remoteState;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-      // Re-render everything
+      state = reconcileWeek(normalizeState(remoteState));
+      persistLocal();
       refreshUI();
       setSyncStatus('synced');
-      isSyncing = false;
     }, () => {
       setSyncStatus('offline');
     });
 
-    unsubscribe = () => stateRef.off('value', callback);
+    unsubscribe = () => ref.off('value', callback);
   }
 
   function refreshUI() {
@@ -315,6 +332,8 @@
 
     currentUser = user;
     userEmailEl.textContent = user.email;
+    storageKey = 'payday:' + user.uid;
+    localStorage.removeItem(LEGACY_STORAGE_KEY); // pre-namespacing cache
 
     // Look up household
     let hid = await getHouseholdId(user.uid);
@@ -325,6 +344,11 @@
     }
     householdId = hid;
     householdCodeEl.textContent = householdId;
+
+    // Offline-first: render this household's cached snapshot (if any) until
+    // the live listener delivers fresh data.
+    state = reconcileWeek(normalizeState(loadCachedState(hid) || defaultState()));
+    refreshUI();
 
     // Set up Firebase state reference
     stateRef = getStateRef(householdId);
@@ -699,7 +723,7 @@
 
     const entry = {
       id: generateId(),
-      weekStart: sat.toISOString().slice(0, 10),
+      weekStart: toLocalDateKey(sat),
       weekLabel: `${formatDate(sat)} – ${formatDate(fri)}`,
       hours: totalHours,
       wages: wages,
@@ -822,6 +846,11 @@
 
     try {
       await joinHousehold(currentUser.uid, currentUser.email, code);
+
+      // Detach from the old household BEFORE repointing, so its listener
+      // can't keep overwriting local state with the old household's data.
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+
       householdId = code;
       householdCodeEl.textContent = householdId;
 
@@ -854,10 +883,12 @@
 
     // Sign out button
     signOutBtn.addEventListener('click', () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
       stateRef = null;
       householdId = null;
       currentUser = null;
+      storageKey = null;
+      state = defaultState();
       signOutUser();
     });
 
