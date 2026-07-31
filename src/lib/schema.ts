@@ -1,0 +1,197 @@
+// Schema v2 types + snapshot normalizers.
+//
+// RTDB has no schema: empty objects vanish, arrays come back as objects,
+// and any member can write any shape. Every snapshot passes through a
+// normalizer before entering the store, so the rest of the app can trust
+// the types.
+
+import type { BillBreakdown, BillCounts, Cents } from './money';
+import { BILLS } from './money';
+import { currentWeekStart } from './dates';
+
+export const SCHEMA_VERSION = 2;
+
+export interface DayEntry {
+  start: string; // "HH:MM" 24h, '' = unset
+  end: string;
+  fuel: boolean;
+  by?: string; // uid of last editor
+}
+
+export interface WeekState {
+  weekStart: string; // YYYY-MM-DD, Saturday
+  bonusCents: Cents;
+  carryoverCents: Cents;
+  days: Record<string, DayEntry>; // keyed by local date
+}
+
+export interface Settings {
+  hourlyRateCents: Cents;
+  fuelRateCents: Cents;
+}
+
+export interface CashTxn {
+  type: 'deposit' | 'withdrawal';
+  label: string;
+  amountCents: Cents;
+  breakdown?: BillBreakdown;
+  dateLabel: string; // display string; v1 rows carry their original text
+  at: number | null; // epoch ms when known
+  by?: string;
+}
+
+export interface HistoryEntry {
+  weekStart: string;
+  minutes: number;
+  wagesCents: Cents;
+  fuelCents: Cents;
+  bonusCents: Cents;
+  carryoverCents: Cents;
+  totalCents: Cents;
+  amountPaidCents: Cents;
+  shortfallCents: Cents;
+  breakdown?: BillBreakdown;
+  paidDateLabel: string;
+  paidAt: number | null;
+  by?: string;
+}
+
+export interface ArchivedWeek {
+  days: Record<string, DayEntry>;
+  bonusCents: Cents;
+}
+
+export interface Member {
+  email: string;
+  joinedAt: number | null;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  hourlyRateCents: 2200,
+  fuelRateCents: 1000,
+};
+
+// ---- normalizers ----------------------------------------------------------
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+function str(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : fallback;
+}
+
+function rec(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+export function normalizeDay(v: unknown): DayEntry {
+  const o = rec(v);
+  return {
+    start: str(o.start),
+    end: str(o.end),
+    fuel: o.fuel === true,
+    by: typeof o.by === 'string' ? o.by : undefined,
+  };
+}
+
+export function normalizeWeek(v: unknown): WeekState {
+  const o = rec(v);
+  const days: Record<string, DayEntry> = {};
+  for (const [k, d] of Object.entries(rec(o.days))) days[k] = normalizeDay(d);
+  return {
+    weekStart: str(o.weekStart) || currentWeekStart(),
+    bonusCents: num(o.bonusCents),
+    carryoverCents: num(o.carryoverCents),
+    days,
+  };
+}
+
+export function normalizeSettings(v: unknown): Settings {
+  const o = rec(v);
+  return {
+    hourlyRateCents: num(o.hourlyRateCents, DEFAULT_SETTINGS.hourlyRateCents),
+    fuelRateCents: num(o.fuelRateCents, DEFAULT_SETTINGS.fuelRateCents),
+  };
+}
+
+export function normalizeCounts(v: unknown): BillCounts {
+  const o = rec(v);
+  const counts: BillCounts = {};
+  for (const b of BILLS) counts[String(b)] = Math.max(0, Math.round(num(o[String(b)])));
+  return counts;
+}
+
+function normalizeBreakdown(v: unknown): BillBreakdown | undefined {
+  const o = rec(v);
+  const out: BillBreakdown = {};
+  let any = false;
+  for (const b of BILLS) {
+    const n = num(o[String(b)]);
+    if (n > 0) {
+      out[String(b)] = Math.round(n);
+      any = true;
+    }
+  }
+  return any ? out : undefined;
+}
+
+export function normalizeTxn(v: unknown): CashTxn {
+  const o = rec(v);
+  return {
+    type: o.type === 'deposit' ? 'deposit' : 'withdrawal',
+    label: str(o.label),
+    amountCents: num(o.amountCents),
+    breakdown: normalizeBreakdown(o.breakdown),
+    dateLabel: str(o.dateLabel),
+    at: typeof o.at === 'number' ? o.at : null,
+    by: typeof o.by === 'string' ? o.by : undefined,
+  };
+}
+
+export function normalizeHistory(v: unknown): HistoryEntry {
+  const o = rec(v);
+  return {
+    weekStart: str(o.weekStart),
+    minutes: num(o.minutes),
+    wagesCents: num(o.wagesCents),
+    fuelCents: num(o.fuelCents),
+    bonusCents: num(o.bonusCents),
+    carryoverCents: num(o.carryoverCents),
+    totalCents: num(o.totalCents),
+    amountPaidCents: num(o.amountPaidCents),
+    shortfallCents: num(o.shortfallCents),
+    breakdown: normalizeBreakdown(o.breakdown),
+    paidDateLabel: str(o.paidDateLabel),
+    paidAt: typeof o.paidAt === 'number' ? o.paidAt : null,
+    by: typeof o.by === 'string' ? o.by : undefined,
+  };
+}
+
+export function normalizeKeyed<T>(
+  v: unknown,
+  normalizeOne: (item: unknown) => T,
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [k, item] of Object.entries(rec(v))) out[k] = normalizeOne(item);
+  return out;
+}
+
+export function normalizeArchived(v: unknown): ArchivedWeek {
+  const o = rec(v);
+  const days: Record<string, DayEntry> = {};
+  for (const [k, d] of Object.entries(rec(o.days))) days[k] = normalizeDay(d);
+  return { days, bonusCents: num(o.bonusCents) };
+}
+
+export function normalizeMember(v: unknown): Member {
+  // v1 stored a bare email string; v2 stores an object.
+  if (typeof v === 'string') return { email: v, joinedAt: null };
+  const o = rec(v);
+  return {
+    email: str(o.email),
+    joinedAt: typeof o.joinedAt === 'number' ? o.joinedAt : null,
+  };
+}

@@ -1,0 +1,117 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* ---- design tokens: "calm fintech" -------------------------------------
+   Light is the base; dark applies via system preference or the manual
+   data-theme override. Everything downstream consumes the role vars. */
+
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --border-c: rgb(0 0 0 / 0.08);
+  --text: #18181b;
+  --muted: #52525b;
+  --accent: #059669;
+  --accent-strong: #047857;
+  --accent-soft: rgb(5 150 105 / 0.12);
+  --danger: #dc2626;
+  --danger-soft: rgb(220 38 38 / 0.1);
+  --warn: #b45309;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #101014;
+    --surface: #17171c;
+    --surface-2: #1f1f26;
+    --border-c: rgb(255 255 255 / 0.09);
+    --text: #f2f2f5;
+    --muted: #9d9da8;
+    --accent: #34d399;
+    --accent-strong: #10b981;
+    --accent-soft: rgb(52 211 153 / 0.12);
+    --danger: #f87171;
+    --danger-soft: rgb(248 113 113 / 0.12);
+    --warn: #fbbf24;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #101014;
+  --surface: #17171c;
+  --surface-2: #1f1f26;
+  --border-c: rgb(255 255 255 / 0.09);
+  --text: #f2f2f5;
+  --muted: #9d9da8;
+  --accent: #34d399;
+  --accent-strong: #10b981;
+  --accent-soft: rgb(52 211 153 / 0.12);
+  --danger: #f87171;
+  --danger-soft: rgb(248 113 113 / 0.12);
+  --warn: #fbbf24;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border-c);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --font-sans: 'Inter Variable', system-ui, -apple-system, sans-serif;
+  --radius-card: 0.875rem;
+  --radius-control: 0.625rem;
+}
+
+/* ---- base --------------------------------------------------------------- */
+
+html {
+  color-scheme: light dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter Variable', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: env(safe-area-inset-top) 0 0 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+input[type='time'],
+input[type='text'],
+input[type='number'],
+input[inputmode] {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
