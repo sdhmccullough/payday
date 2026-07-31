@@ -43,16 +43,19 @@ function createHousehold(uid, email) {
   return db.ref().update(updates);
 }
 
-// Join an existing household
+// Join an existing household.
+// No existence pre-read: security rules deny reads to non-members, and they
+// also reject this update unless the household exists (or is our own), so a
+// PERMISSION_DENIED here doubles as "not found".
 function joinHousehold(uid, email, householdId) {
-  return db.ref('households/' + householdId).once('value').then(snap => {
-    if (!snap.exists()) {
+  const updates = {};
+  updates['households/' + householdId + '/members/' + uid] = email;
+  updates['userHouseholds/' + uid] = householdId;
+  return db.ref().update(updates).catch(err => {
+    if (/permission.denied/i.test((err && err.code) || (err && err.message) || '')) {
       throw new Error('Household not found. Check the code and try again.');
     }
-    const updates = {};
-    updates['households/' + householdId + '/members/' + uid] = email;
-    updates['userHouseholds/' + uid] = householdId;
-    return db.ref().update(updates);
+    throw err;
   });
 }
 
