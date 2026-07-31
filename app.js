@@ -167,6 +167,14 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   }
 
+  // HTML-escape for strings interpolated into innerHTML templates. Household
+  // state is written by every member, so anything read from it is untrusted.
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
   // ============================
   //  PERSISTENCE (localStorage + Firebase)
   // ============================
@@ -546,18 +554,18 @@
       const div = document.createElement('div');
       div.className = 'txn-card';
       const isDeposit = txn.type === 'deposit';
-      const breakdownHtml = txn.breakdown ? `<span class="txn-breakdown">${formatBreakdown(txn.breakdown)}</span>` : '';
+      const breakdownHtml = txn.breakdown ? `<span class="txn-breakdown">${esc(formatBreakdown(txn.breakdown))}</span>` : '';
       div.innerHTML = `
         <div class="txn-info">
-          <span class="txn-label">${txn.label}</span>
-          <span class="txn-date">${txn.date}</span>
+          <span class="txn-label">${esc(txn.label)}</span>
+          <span class="txn-date">${esc(txn.date)}</span>
           ${breakdownHtml}
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="txn-amount ${isDeposit ? 'deposit' : 'withdrawal'}">
             ${isDeposit ? '+' : '−'}$${Math.abs(txn.amount).toFixed(2)}
           </span>
-          <button class="txn-delete" data-id="${txn.id}" title="Delete">
+          <button class="txn-delete" data-id="${esc(txn.id)}" title="Delete">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -590,10 +598,10 @@
       card.className = 'history-card';
       card.innerHTML = `
         <div class="history-header">
-          <span class="history-week">${entry.weekLabel}</span>
+          <span class="history-week">${esc(entry.weekLabel)}</span>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="history-amount">$${entry.total.toFixed(2)}</span>
-            <button class="history-delete" data-id="${entry.id}" title="Delete">
+            <button class="history-delete" data-id="${esc(entry.id)}" title="Delete">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -604,7 +612,7 @@
           <span class="history-detail">Fuel: <span>$${entry.fuel.toFixed(2)}</span></span>
           ${(entry.bonus || 0) > 0 ? `<span class="history-detail">Bonus: <span>$${entry.bonus.toFixed(2)}</span></span>` : ''}
           ${(entry.carryover || 0) > 0 ? `<span class="history-detail" style="color:#fb923c">Carryover: <span>$${entry.carryover.toFixed(2)}</span></span>` : ''}
-          <span class="history-detail">Paid: <span>${entry.paidDate}</span></span>
+          <span class="history-detail">Paid: <span>${esc(entry.paidDate)}</span></span>
           ${(entry.shortfall || 0) > 0 ? `<span class="history-detail" style="color:var(--danger)">Short: <span>$${entry.shortfall.toFixed(2)}</span></span>` : ''}
         </div>
       `;
