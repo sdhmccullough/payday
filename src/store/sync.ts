@@ -18,15 +18,18 @@ import {
 import { db } from '../lib/firebase';
 import { patchStore, readStore, useStore } from './useStore';
 import {
+  dayMinutes,
   normalizeArchived,
   normalizeCounts,
   normalizeHistory,
   normalizeKeyed,
   normalizeMember,
+  normalizePresence,
   normalizePriorPayment,
   normalizeSettings,
   normalizeTxn,
   normalizeWeek,
+  withAutoFuel,
   type DayEntry,
   type HistoryEntry,
 } from '../lib/schema';
@@ -35,6 +38,9 @@ import {
   currentWeekStart,
   formatFull,
   minutesBetween,
+  nowHHMM,
+  roundToNearest15,
+  toLocalDateKey,
   weekLabel,
 } from '../lib/dates';
 import { runMigrationIfNeeded } from './migrate';
@@ -56,6 +62,7 @@ const CACHE_SLICES = [
   'archivedWeeks',
   'members',
   'priorPayments',
+  'presence',
 ] as const;
 
 function cacheKey(u: string, hid: string): string {
@@ -78,6 +85,7 @@ function hydrateFromCache(hid: string): void {
       archivedWeeks: normalizeKeyed(cached.archivedWeeks, normalizeArchived),
       members: normalizeKeyed(cached.members, normalizeMember),
       priorPayments: normalizeKeyed(cached.priorPayments, normalizePriorPayment),
+      presence: normalizeKeyed(cached.presence, normalizePresence),
     });
   } catch {
     /* corrupt cache — live data will replace it */
@@ -104,7 +112,9 @@ function schedulePersist(): void {
 }
 
 function hhRef(path = ''): DatabaseReference {
-  const hid = currentHid;
+  // Demo mode: point writes at a rules-denied dummy path so interactions
+  // fail softly (async, caught, toasted) instead of throwing in handlers.
+  const hid = readStore().demoMode ? 'demo' : currentHid;
   if (!hid) throw new Error('No household attached');
   return ref(db, `households/${hid}${path ? '/' + path : ''}`);
 }
@@ -151,6 +161,21 @@ export async function attachHousehold(hid: string): Promise<void> {
     [
       'meta/ownerUid',
       (v) => patchStore({ ownerUid: typeof v === 'string' ? v : null }),
+    ],
+    [
+      'presence',
+      (v) => patchStore({ presence: normalizeKeyed(v, normalizePresence) }),
+    ],
+    [
+      'sensors',
+      (v) =>
+        patchStore({
+          sensors: Object.fromEntries(
+            Object.entries(
+              (v as Record<string, unknown>) ?? {},
+            ).map(([k, val]) => [k, val === true]),
+          ),
+        }),
     ],
   ];
 
@@ -203,11 +228,26 @@ function writing<T>(p: Promise<T>): Promise<T> {
 
 export function setDayField(
   dateKey: string,
-  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel'>>,
+  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>>,
 ): Promise<void> {
+  const fullPatch = withAutoFuel(readStore().week.days[dateKey], patch);
   return writing(
-    update(hhRef(`week/days/${dateKey}`), { ...patch, by: uid() ?? null }),
+    update(hhRef(`week/days/${dateKey}`), { ...fullPatch, by: uid() ?? null }),
   );
+}
+
+/** One-tap punch for today, rounded to the nearest 15 minutes (the
+ * household pays by quarter-hour marks). */
+export function punchToday(kind: 'start' | 'end'): Promise<void> {
+  const todayKey = toLocalDateKey(new Date());
+  const time = roundToNearest15(nowHHMM());
+  if (kind === 'end') {
+    const day = readStore().week.days[todayKey];
+    if (day?.start && minutesBetween(day.start, time) === 0) {
+      return Promise.reject(new Error('End time must be after the start time.'));
+    }
+  }
+  return setDayField(todayKey, { [kind]: time });
 }
 
 export function clearDay(dateKey: string): Promise<void> {
@@ -283,7 +323,7 @@ export function computeSavePay(): SavePayComputation {
   let minutes = 0;
   let fuelDays = 0;
   for (const day of Object.values(week.days)) {
-    minutes += minutesBetween(day.start, day.end);
+    minutes += dayMinutes(day);
     if (day.fuel) fuelDays++;
   }
   const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
@@ -365,7 +405,7 @@ export function computeArchivedPay(weekStart: string): SavePayComputation | null
   let minutes = 0;
   let fuelDays = 0;
   for (const day of Object.values(archived.days)) {
-    minutes += minutesBetween(day.start, day.end);
+    minutes += dayMinutes(day);
     if (day.fuel) fuelDays++;
   }
   const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
@@ -437,6 +477,22 @@ export function commitArchivedPay(
 /** Discard an archived week without paying it. */
 export function discardArchivedWeek(weekStart: string): Promise<void> {
   return writing(remove(hhRef(`archivedWeeks/${weekStart}`)));
+}
+
+// ---- presence sensors -----------------------------------------------------
+
+/** Clear a bad presence day (member action). */
+export function clearPresenceDay(dateKey: string): Promise<void> {
+  return writing(remove(hhRef(`presence/${dateKey}`)));
+}
+
+/** Grant or revoke a sensor identity's write access to presence data. */
+export function setSensorGrant(sensorUid: string, granted: boolean): Promise<void> {
+  return writing(
+    granted
+      ? update(hhRef('sensors'), { [sensorUid]: true })
+      : remove(hhRef(`sensors/${sensorUid}`)),
+  );
 }
 
 // ---- week rollover --------------------------------------------------------

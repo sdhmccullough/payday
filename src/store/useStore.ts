@@ -4,6 +4,7 @@ import type {
   CashTxn,
   HistoryEntry,
   Member,
+  PresenceDay,
   PriorPayment,
   Settings,
   WeekState,
@@ -39,6 +40,8 @@ interface Store {
   archivedWeeks: Record<string, ArchivedWeek>;
   members: Record<string, Member>;
   priorPayments: Record<string, PriorPayment>;
+  presence: Record<string, PresenceDay>;
+  sensors: Record<string, boolean>;
   ownerUid: string | null;
 
   // ui
@@ -49,6 +52,8 @@ interface Store {
   setPendingInvite: (token: string | null) => void;
   /** True when the browser offered a deferred install prompt. */
   installAvailable: boolean;
+  /** Preview-channel demo: sample data, no auth, nothing persists. */
+  demoMode: boolean;
 }
 
 export const useStore = create<Store>((set) => ({
@@ -67,6 +72,8 @@ export const useStore = create<Store>((set) => ({
   archivedWeeks: {},
   members: {},
   priorPayments: {},
+  presence: {},
+  sensors: {},
   ownerUid: null,
 
   tab: 'timesheet',
@@ -74,6 +81,7 @@ export const useStore = create<Store>((set) => ({
   pendingInvite: null,
   setPendingInvite: (token) => set({ pendingInvite: token }),
   installAvailable: false,
+  demoMode: false,
 }));
 
 /** Imperative setter for non-React modules (sync layer, auth). */

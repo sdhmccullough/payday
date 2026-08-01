@@ -66,6 +66,7 @@ function AppShell() {
   const week = useStore((s) => s.week);
   const settings = useStore((s) => s.settings);
   const migrating = useStore((s) => s.migrating);
+  const demoMode = useStore((s) => s.demoMode);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Device-local payday reminder: at most once per day, only while open.
@@ -125,6 +126,14 @@ function AppShell() {
         {migrating ? (
           <p className="mb-3 rounded-(--radius-control) bg-accent-soft p-3 text-sm text-accent">
             Upgrading your household data — one moment…
+          </p>
+        ) : null}
+
+        {demoMode ? (
+          <p className="mb-3 rounded-(--radius-control) border border-warn/30 bg-surface p-3 text-xs text-muted">
+            <span className="font-semibold text-warn">Preview build</span> —
+            sample data, no sign-in, changes aren't saved. The real app lives
+            at payday-daf05.web.app.
           </p>
         ) : null}
 

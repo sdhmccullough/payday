@@ -1,11 +1,12 @@
-import { memo } from 'react';
-import type { DayEntry } from '../../lib/schema';
+import { memo, useState } from 'react';
+import { dayMinutes, type DayEntry } from '../../lib/schema';
 import { formatShort, minutesBetween, parseDateKey } from '../../lib/dates';
 import { clearDay, setDayField } from '../../store/sync';
 import { Switch } from '../../components/ui/Switch';
 import { IconButton } from '../../components/ui/Button';
 import { XIcon } from '../../components/icons';
 import { toastError } from '../../components/ui/Toast';
+import { SuggestionChip } from './SuggestionChip';
 
 function onWriteError(err: unknown) {
   console.error(err);
@@ -16,24 +17,30 @@ export const DayCard = memo(function DayCard({
   dayName,
   dateKey,
   entry,
+  isToday = false,
 }: {
   dayName: string;
   dateKey: string;
   entry: DayEntry | undefined;
+  isToday?: boolean;
 }) {
   const start = entry?.start ?? '';
   const end = entry?.end ?? '';
   const fuel = entry?.fuel ?? false;
-  const minutes = minutesBetween(start, end);
+  const breakMinutes = entry?.breakMinutes ?? 0;
+  const span = minutesBetween(start, end);
+  const minutes = dayMinutes(entry);
   const hasBoth = Boolean(start && end);
-  const invalidRange = hasBoth && minutes === 0;
+  const invalidRange = hasBoth && span === 0;
   const hasEntry = Boolean(start || end || fuel);
+  const [showBreak, setShowBreak] = useState(false);
+  const breakVisible = showBreak || breakMinutes > 0;
 
   return (
     <div
       className={`rounded-(--radius-card) border bg-surface p-4 shadow-(--shadow-card) transition ${
         minutes > 0 ? 'border-accent/35' : 'border-line'
-      }`}
+      } ${isToday ? 'ring-1 ring-accent/40' : ''}`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-baseline gap-2">
@@ -67,7 +74,7 @@ export const DayCard = memo(function DayCard({
           <span className="mb-1 block text-xs font-medium text-muted">Start</span>
           <input
             type="time"
-            step={900}
+            step={60}
             value={start}
             onChange={(e) =>
               setDayField(dateKey, { start: e.target.value }).catch(onWriteError)
@@ -82,7 +89,7 @@ export const DayCard = memo(function DayCard({
           <span className="mb-1 block text-xs font-medium text-muted">End</span>
           <input
             type="time"
-            step={900}
+            step={60}
             value={end}
             onChange={(e) =>
               setDayField(dateKey, { end: e.target.value }).catch(onWriteError)
@@ -98,6 +105,8 @@ export const DayCard = memo(function DayCard({
         </p>
       ) : null}
 
+      {isToday ? <SuggestionChip dateKey={dateKey} entry={entry} /> : null}
+
       <div className="mt-3 flex items-center justify-between">
         <span className="text-sm text-muted">Fuel reimbursement</span>
         <Switch
@@ -108,6 +117,34 @@ export const DayCard = memo(function DayCard({
           label={`Fuel reimbursement for ${dayName}`}
         />
       </div>
+
+      {breakVisible ? (
+        <label className="mt-2 flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted">Unpaid break</span>
+          <span className="flex items-center gap-1">
+            <input
+              inputMode="numeric"
+              value={breakMinutes > 0 ? String(breakMinutes) : ''}
+              placeholder="0"
+              aria-label={`Unpaid break minutes for ${dayName}`}
+              onChange={(e) => {
+                const n = Math.max(0, Math.round(Number(e.target.value) || 0));
+                setDayField(dateKey, { breakMinutes: n }).catch(onWriteError);
+              }}
+              className="min-h-10 w-16 rounded-(--radius-control) border border-line bg-surface-2 px-2 text-right text-sm tabular-nums"
+            />
+            <span className="text-xs text-muted">min</span>
+          </span>
+        </label>
+      ) : hasBoth ? (
+        <button
+          type="button"
+          onClick={() => setShowBreak(true)}
+          className="mt-2 text-xs text-muted underline-offset-2 transition hover:text-ink hover:underline"
+        >
+          Add unpaid break…
+        </button>
+      ) : null}
     </div>
   );
 });

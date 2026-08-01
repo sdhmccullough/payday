@@ -74,6 +74,51 @@ export function weekLabel(weekStart: string): string {
   return `${formatShort(sat)} – ${formatShort(fri)}`;
 }
 
+/** Current local time as "HH:MM" (exact minutes — punch is ground truth). */
+export function nowHHMM(d = new Date()): string {
+  return (
+    String(d.getHours()).padStart(2, '0') +
+    ':' +
+    String(d.getMinutes()).padStart(2, '0')
+  );
+}
+
+/** Round "HH:MM" to the nearest 5 minutes, clamped inside the same day.
+ * Used for presence-detected suggestions (estimates), never for punches. */
+export function roundToNearest5(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  let total = Math.round((h * 60 + m) / 5) * 5;
+  if (total >= 24 * 60) total = 24 * 60 - 5;
+  return (
+    String(Math.floor(total / 60)).padStart(2, '0') +
+    ':' +
+    String(total % 60).padStart(2, '0')
+  );
+}
+
+/** Round "HH:MM" to the nearest 15 minutes (pay-period convention), clamped
+ * inside the same day. Applied when times are ENTERED (punch, suggestion
+ * apply); displayed detections stay at finer precision. */
+export function roundToNearest15(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  let total = Math.round((h * 60 + m) / 15) * 15;
+  if (total >= 24 * 60) total = 24 * 60 - 15;
+  return (
+    String(Math.floor(total / 60)).padStart(2, '0') +
+    ':' +
+    String(total % 60).padStart(2, '0')
+  );
+}
+
+/** "HH:MM" → "7:58 AM" for display. */
+export function formatHHMM12(hhmm: string): string {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 /** Minutes between two "HH:MM" strings; overnight wraps are rejected upstream. */
 export function minutesBetween(start: string, end: string): number {
   if (!start || !end) return 0;

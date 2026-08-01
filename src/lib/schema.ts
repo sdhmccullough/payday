@@ -7,7 +7,7 @@
 
 import type { BillBreakdown, BillCounts, Cents } from './money';
 import { BILLS } from './money';
-import { currentWeekStart } from './dates';
+import { currentWeekStart, minutesBetween } from './dates';
 
 export const SCHEMA_VERSION = 2;
 
@@ -15,6 +15,8 @@ export interface DayEntry {
   start: string; // "HH:MM" 24h, '' = unset
   end: string;
   fuel: boolean;
+  /** Unpaid break minutes deducted from the day (rare; e.g. a midday outing). */
+  breakMinutes?: number;
   by?: string; // uid of last editor
 }
 
@@ -75,6 +77,15 @@ export interface PriorPayment {
   label: string;
 }
 
+/** Raw WiFi-presence observations for one local date, written by a sensor
+ * (e.g. the UDM poller). Flat epoch-ms timestamps; ALL interpretation
+ * (gap tolerance, staleness, formatting) happens app-side. */
+export interface PresenceDay {
+  firstSeenAt: number;
+  lastSeenAt: number;
+  updatedAt: number;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   hourlyRateCents: 2200,
   fuelRateCents: 1000,
@@ -97,14 +108,40 @@ function rec(v: unknown): Record<string, unknown> {
     : {};
 }
 
+/** Auto-fuel: the household pays flat fuel every day worked, so the first
+ * time value landing on an empty day switches fuel on. Explicit fuel in the
+ * patch, or a day that already has a time, is never overridden — the per-day
+ * switch stays authoritative. */
+export function withAutoFuel(
+  existing: DayEntry | undefined,
+  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>>,
+): Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>> {
+  const setsTime = Boolean(patch.start) || Boolean(patch.end);
+  const hadTime = Boolean(existing?.start) || Boolean(existing?.end);
+  if (setsTime && !hadTime && patch.fuel === undefined) {
+    return { ...patch, fuel: true };
+  }
+  return patch;
+}
+
 export function normalizeDay(v: unknown): DayEntry {
   const o = rec(v);
+  const brk = Math.max(0, Math.round(num(o.breakMinutes)));
   return {
     start: str(o.start),
     end: str(o.end),
     fuel: o.fuel === true,
+    breakMinutes: brk > 0 ? brk : undefined,
     by: typeof o.by === 'string' ? o.by : undefined,
   };
+}
+
+/** Paid minutes for a day: the start–end span minus any unpaid break. */
+export function dayMinutes(entry: DayEntry | undefined): number {
+  if (!entry) return 0;
+  const span = minutesBetween(entry.start, entry.end);
+  if (span <= 0) return 0;
+  return Math.max(0, span - (entry.breakMinutes ?? 0));
 }
 
 export function normalizeWeek(v: unknown): WeekState {
@@ -214,5 +251,14 @@ export function normalizePriorPayment(v: unknown): PriorPayment {
     dateKey: str(o.dateKey),
     amountCents: num(o.amountCents),
     label: str(o.label),
+  };
+}
+
+export function normalizePresence(v: unknown): PresenceDay {
+  const o = rec(v);
+  return {
+    firstSeenAt: num(o.firstSeenAt),
+    lastSeenAt: num(o.lastSeenAt),
+    updatedAt: num(o.updatedAt),
   };
 }
