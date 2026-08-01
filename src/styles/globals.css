@@ -19,6 +19,9 @@
   --danger-soft: rgb(220 38 38 / 0.1);
   --warn: #b45309;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05);
+  /* Chart mark color — emerald-600 passes the dataviz lightness/contrast
+     checks on BOTH surfaces, so it's mode-invariant by design. */
+  --chart-mark: #059669;
 }
 
 @media (prefers-color-scheme: dark) {
