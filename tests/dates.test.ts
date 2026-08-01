@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   currentWeekSaturday,
   currentWeekStart,
+  formatHHMM12,
   minutesBetween,
+  nowHHMM,
   parseDateKey,
+  roundToNearest5,
   toLocalDateKey,
   weekDayKey,
   weekLabel,
@@ -69,6 +72,33 @@ describe('weekDayKey / weekLabel', () => {
 
   it('labels the range', () => {
     expect(weekLabel('2026-07-25')).toBe('Jul 25 – Jul 31');
+  });
+});
+
+describe('nowHHMM / roundToNearest5 / formatHHMM12', () => {
+  it('formats current time with padding', () => {
+    expect(nowHHMM(new Date(2026, 6, 31, 7, 5))).toBe('07:05');
+    expect(nowHHMM(new Date(2026, 6, 31, 23, 59))).toBe('23:59');
+  });
+
+  it('rounds to nearest 5 minutes', () => {
+    expect(roundToNearest5('07:57')).toBe('07:55');
+    expect(roundToNearest5('07:58')).toBe('08:00');
+    expect(roundToNearest5('08:02')).toBe('08:00');
+    expect(roundToNearest5('00:02')).toBe('00:00');
+  });
+
+  it('clamps within the same day at midnight', () => {
+    expect(roundToNearest5('23:59')).toBe('23:55');
+    expect(roundToNearest5('23:57')).toBe('23:55');
+  });
+
+  it('formats 12-hour display times', () => {
+    expect(formatHHMM12('07:58')).toBe('7:58 AM');
+    expect(formatHHMM12('16:30')).toBe('4:30 PM');
+    expect(formatHHMM12('00:05')).toBe('12:05 AM');
+    expect(formatHHMM12('12:00')).toBe('12:00 PM');
+    expect(formatHHMM12('')).toBe('');
   });
 });
 

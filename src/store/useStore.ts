@@ -4,6 +4,7 @@ import type {
   CashTxn,
   HistoryEntry,
   Member,
+  PresenceDay,
   PriorPayment,
   Settings,
   WeekState,
@@ -39,6 +40,8 @@ interface Store {
   archivedWeeks: Record<string, ArchivedWeek>;
   members: Record<string, Member>;
   priorPayments: Record<string, PriorPayment>;
+  presence: Record<string, PresenceDay>;
+  sensors: Record<string, boolean>;
   ownerUid: string | null;
 
   // ui
@@ -67,6 +70,8 @@ export const useStore = create<Store>((set) => ({
   archivedWeeks: {},
   members: {},
   priorPayments: {},
+  presence: {},
+  sensors: {},
   ownerUid: null,
 
   tab: 'timesheet',

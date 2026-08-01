@@ -4,6 +4,7 @@ import {
   DAY_NAMES,
   WEEKDAY_INDICES,
   minutesBetween,
+  toLocalDateKey,
   weekDayKey,
   weekLabel,
 } from '../../lib/dates';
@@ -20,6 +21,7 @@ import {
   type SavePayComputation,
 } from '../../store/sync';
 import { DayCard } from './DayCard';
+import { PunchBanner } from './PunchBanner';
 import { SavePayDialog } from './SavePayDialog';
 import { Button, IconButton } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/Dialog';
@@ -165,7 +167,9 @@ export function TimesheetTab() {
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-5">
       <div>
-      <h2 className="mb-3 text-sm font-semibold text-muted">
+      <PunchBanner />
+
+      <h2 className="mt-3 mb-3 text-sm font-semibold text-muted">
         Week of {weekLabel(week.weekStart)}
       </h2>
 
@@ -173,7 +177,13 @@ export function TimesheetTab() {
         {DAY_NAMES.map((name, i) => {
           const key = weekDayKey(week.weekStart, i);
           return (
-            <DayCard key={key} dayName={name} dateKey={key} entry={week.days[key]} />
+            <DayCard
+              key={key}
+              dayName={name}
+              dateKey={key}
+              entry={week.days[key]}
+              isToday={key === toLocalDateKey(new Date())}
+            />
           );
         })}
       </div>

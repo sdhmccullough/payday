@@ -75,6 +75,15 @@ export interface PriorPayment {
   label: string;
 }
 
+/** Raw WiFi-presence observations for one local date, written by a sensor
+ * (e.g. the UDM poller). Flat epoch-ms timestamps; ALL interpretation
+ * (gap tolerance, staleness, formatting) happens app-side. */
+export interface PresenceDay {
+  firstSeenAt: number;
+  lastSeenAt: number;
+  updatedAt: number;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   hourlyRateCents: 2200,
   fuelRateCents: 1000,
@@ -95,6 +104,22 @@ function rec(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
+}
+
+/** Auto-fuel: the household pays flat fuel every day worked, so the first
+ * time value landing on an empty day switches fuel on. Explicit fuel in the
+ * patch, or a day that already has a time, is never overridden — the per-day
+ * switch stays authoritative. */
+export function withAutoFuel(
+  existing: DayEntry | undefined,
+  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel'>>,
+): Partial<Pick<DayEntry, 'start' | 'end' | 'fuel'>> {
+  const setsTime = Boolean(patch.start) || Boolean(patch.end);
+  const hadTime = Boolean(existing?.start) || Boolean(existing?.end);
+  if (setsTime && !hadTime && patch.fuel === undefined) {
+    return { ...patch, fuel: true };
+  }
+  return patch;
 }
 
 export function normalizeDay(v: unknown): DayEntry {
@@ -214,5 +239,14 @@ export function normalizePriorPayment(v: unknown): PriorPayment {
     dateKey: str(o.dateKey),
     amountCents: num(o.amountCents),
     label: str(o.label),
+  };
+}
+
+export function normalizePresence(v: unknown): PresenceDay {
+  const o = rec(v);
+  return {
+    firstSeenAt: num(o.firstSeenAt),
+    lastSeenAt: num(o.lastSeenAt),
+    updatedAt: num(o.updatedAt),
   };
 }

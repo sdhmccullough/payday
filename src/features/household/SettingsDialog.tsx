@@ -13,7 +13,7 @@ import { Switch } from '../../components/ui/Switch';
 import { toast, toastError } from '../../components/ui/Toast';
 import { TrashIcon } from '../../components/icons';
 import { debounce } from '../../lib/debounce';
-import { setPaydayDay } from '../../store/sync';
+import { setPaydayDay, setSensorGrant } from '../../store/sync';
 import { isNotifyEnabled, setNotifyEnabled } from '../../lib/notify';
 import { needsIosInstallHint, promptInstall } from '../../lib/install';
 
@@ -69,6 +69,8 @@ export function SettingsDialog({
   const members = useStore((s) => s.members);
   const ownerUid = useStore((s) => s.ownerUid);
   const installAvailable = useStore((s) => s.installAvailable);
+  const sensors = useStore((s) => s.sensors);
+  const [sensorUid, setSensorUid] = useState('');
   const [inviting, setInviting] = useState(false);
   const [removeUid, setRemoveUid] = useState<string | null>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
@@ -248,6 +250,68 @@ export function SettingsDialog({
               </button>
             ))}
           </div>
+        </section>
+
+        <section aria-label="Presence sensor" className="space-y-3">
+          <h3 className="text-xs font-bold tracking-wide text-muted uppercase">
+            Presence sensor
+          </h3>
+          {Object.keys(sensors).length > 0 ? (
+            <ul className="space-y-1.5">
+              {Object.keys(sensors).map((uid) => (
+                <li
+                  key={uid}
+                  className="flex min-h-10 items-center justify-between gap-2 rounded-(--radius-control) bg-surface-2 px-3 py-1 text-xs"
+                >
+                  <code className="truncate">{uid}</code>
+                  <Button
+                    variant="ghost"
+                    className="!min-h-8 text-danger"
+                    onClick={() =>
+                      setSensorGrant(uid, false).catch(() =>
+                        toastError('Not synced'),
+                      )
+                    }
+                  >
+                    Revoke
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = sensorUid.trim();
+              if (!v) return;
+              setSensorGrant(v, true)
+                .then(() => {
+                  setSensorUid('');
+                  toast('Sensor granted', 'It can now report presence.');
+                })
+                .catch(() => toastError('Not synced'));
+            }}
+          >
+            <label htmlFor="sensor-uid" className="sr-only">
+              Sensor user ID
+            </label>
+            <input
+              id="sensor-uid"
+              value={sensorUid}
+              onChange={(e) => setSensorUid(e.target.value)}
+              placeholder="Sensor account UID"
+              className="min-h-11 min-w-0 flex-1 rounded-(--radius-control) border border-line bg-surface-2 px-3 font-mono text-xs"
+            />
+            <Button type="submit" disabled={!sensorUid.trim()}>
+              Grant
+            </Button>
+          </form>
+          <p className="text-xs text-muted">
+            Lets a device (like your UniFi console) report arrival and
+            departure times as suggestions. Setup guide: SETUP-UNIFI.md in the
+            repo. Sensors can only write presence timestamps — never money.
+          </p>
         </section>
 
         {installAvailable || needsIosInstallHint() ? (

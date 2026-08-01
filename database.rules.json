@@ -93,6 +93,24 @@
             "amountCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "dateKey": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)" }
           }
+        },
+        "sensors": {
+          ".read": "auth != null && root.child('households/' + $hid + '/members/' + auth.uid).exists()",
+          "$uid": {
+            ".write": "auth != null && root.child('households/' + $hid + '/members/' + auth.uid).exists()",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        "presence": {
+          ".read": "auth != null && root.child('households/' + $hid + '/members/' + auth.uid).exists()",
+          "$date": {
+            ".write": "auth != null && (root.child('households/' + $hid + '/members/' + auth.uid).exists() || root.child('households/' + $hid + '/sensors/' + auth.uid).val() == true)",
+            ".validate": "$date.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)",
+            "firstSeenAt": { ".validate": "newData.isNumber() && newData.val() > 0" },
+            "lastSeenAt": { ".validate": "newData.isNumber() && newData.val() > 0" },
+            "updatedAt": { ".validate": "newData.isNumber() && newData.val() > 0" },
+            "$other": { ".validate": false }
+          }
         }
       }
     }

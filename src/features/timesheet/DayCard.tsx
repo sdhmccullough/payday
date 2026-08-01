@@ -6,6 +6,7 @@ import { Switch } from '../../components/ui/Switch';
 import { IconButton } from '../../components/ui/Button';
 import { XIcon } from '../../components/icons';
 import { toastError } from '../../components/ui/Toast';
+import { SuggestionChip } from './SuggestionChip';
 
 function onWriteError(err: unknown) {
   console.error(err);
@@ -16,10 +17,12 @@ export const DayCard = memo(function DayCard({
   dayName,
   dateKey,
   entry,
+  isToday = false,
 }: {
   dayName: string;
   dateKey: string;
   entry: DayEntry | undefined;
+  isToday?: boolean;
 }) {
   const start = entry?.start ?? '';
   const end = entry?.end ?? '';
@@ -33,7 +36,7 @@ export const DayCard = memo(function DayCard({
     <div
       className={`rounded-(--radius-card) border bg-surface p-4 shadow-(--shadow-card) transition ${
         minutes > 0 ? 'border-accent/35' : 'border-line'
-      }`}
+      } ${isToday ? 'ring-1 ring-accent/40' : ''}`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-baseline gap-2">
@@ -67,7 +70,7 @@ export const DayCard = memo(function DayCard({
           <span className="mb-1 block text-xs font-medium text-muted">Start</span>
           <input
             type="time"
-            step={900}
+            step={60}
             value={start}
             onChange={(e) =>
               setDayField(dateKey, { start: e.target.value }).catch(onWriteError)
@@ -82,7 +85,7 @@ export const DayCard = memo(function DayCard({
           <span className="mb-1 block text-xs font-medium text-muted">End</span>
           <input
             type="time"
-            step={900}
+            step={60}
             value={end}
             onChange={(e) =>
               setDayField(dateKey, { end: e.target.value }).catch(onWriteError)
@@ -97,6 +100,8 @@ export const DayCard = memo(function DayCard({
           End time must be after start time.
         </p>
       ) : null}
+
+      {isToday ? <SuggestionChip dateKey={dateKey} entry={entry} /> : null}
 
       <div className="mt-3 flex items-center justify-between">
         <span className="text-sm text-muted">Fuel reimbursement</span>
