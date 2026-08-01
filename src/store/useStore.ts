@@ -47,6 +47,8 @@ interface Store {
   /** Invite token from a ?invite= link, pending user confirmation. */
   pendingInvite: string | null;
   setPendingInvite: (token: string | null) => void;
+  /** True when the browser offered a deferred install prompt. */
+  installAvailable: boolean;
 }
 
 export const useStore = create<Store>((set) => ({
@@ -71,6 +73,7 @@ export const useStore = create<Store>((set) => ({
   setTab: (tab) => set({ tab }),
   pendingInvite: null,
   setPendingInvite: (token) => set({ pendingInvite: token }),
+  installAvailable: false,
 }));
 
 /** Imperative setter for non-React modules (sync layer, auth). */

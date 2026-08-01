@@ -163,11 +163,13 @@ export function TimesheetTab() {
         </div>
       ) : null}
 
-      <h2 className="text-sm font-semibold text-muted">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-5">
+      <div>
+      <h2 className="mb-3 text-sm font-semibold text-muted">
         Week of {weekLabel(week.weekStart)}
       </h2>
 
-      <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         {DAY_NAMES.map((name, i) => {
           const key = weekDayKey(week.weekStart, i);
           return (
@@ -175,7 +177,9 @@ export function TimesheetTab() {
           );
         })}
       </div>
+      </div>
 
+      <div className="mt-3 space-y-3 lg:sticky lg:top-4 lg:mt-8">
       <div className="rounded-(--radius-card) border border-line bg-surface p-4 shadow-(--shadow-card)">
         {week.carryoverCents > 0 ? (
           <div className="flex items-center justify-between border-b border-line py-2 text-sm">
@@ -258,6 +262,8 @@ export function TimesheetTab() {
         <Button variant="danger" onClick={() => setResetOpen(true)}>
           Reset week
         </Button>
+      </div>
+      </div>
       </div>
 
       <ConfirmDialog

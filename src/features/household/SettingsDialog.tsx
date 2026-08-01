@@ -15,6 +15,7 @@ import { TrashIcon } from '../../components/icons';
 import { debounce } from '../../lib/debounce';
 import { setPaydayDay } from '../../store/sync';
 import { isNotifyEnabled, setNotifyEnabled } from '../../lib/notify';
+import { needsIosInstallHint, promptInstall } from '../../lib/install';
 
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -67,6 +68,7 @@ export function SettingsDialog({
   const user = useStore((s) => s.user);
   const members = useStore((s) => s.members);
   const ownerUid = useStore((s) => s.ownerUid);
+  const installAvailable = useStore((s) => s.installAvailable);
   const [inviting, setInviting] = useState(false);
   const [removeUid, setRemoveUid] = useState<string | null>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
@@ -247,6 +249,27 @@ export function SettingsDialog({
             ))}
           </div>
         </section>
+
+        {installAvailable || needsIosInstallHint() ? (
+          <section aria-label="App" className="space-y-3">
+            <h3 className="text-xs font-bold tracking-wide text-muted uppercase">
+              App
+            </h3>
+            {installAvailable ? (
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted">Install PayDay on this device</span>
+                <Button variant="outline" onClick={() => void promptInstall()}>
+                  Install
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">
+                To install on iPhone: open the Share menu in Safari and choose
+                “Add to Home Screen.”
+              </p>
+            )}
+          </section>
+        ) : null}
 
         <section aria-label="Account" className="space-y-3">
           <h3 className="text-xs font-bold tracking-wide text-muted uppercase">

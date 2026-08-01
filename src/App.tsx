@@ -86,12 +86,27 @@ function AppShell() {
 
   return (
     <Tabs.Root value={tab} onValueChange={(v) => setTab(v as Tab)}>
-      <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-4 pb-24">
+      <div className="mx-auto flex min-h-dvh max-w-lg flex-col px-4 pb-24 sm:max-w-2xl lg:max-w-5xl lg:pb-8">
         <header className="flex items-center justify-between py-4">
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-extrabold tracking-tight">PayDay</h1>
             <SyncBadge />
           </div>
+          <Tabs.List
+            aria-label="Sections"
+            className="hidden gap-1 rounded-(--radius-control) border border-line bg-surface-2 p-1 lg:flex"
+          >
+            {TAB_ITEMS.map(({ value, label, icon: TabIcon }) => (
+              <Tabs.Trigger
+                key={value}
+                value={value}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] px-3 text-sm font-medium text-muted transition data-[state=active]:bg-surface data-[state=active]:text-accent data-[state=active]:shadow-sm"
+              >
+                <TabIcon className="size-4" />
+                {label}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
           <div className="flex items-center gap-1">
             {tab === 'timesheet' ? (
               <IconButton
@@ -128,7 +143,7 @@ function AppShell() {
 
       <Tabs.List
         aria-label="Sections"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur lg:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         <div className="mx-auto flex max-w-lg">
