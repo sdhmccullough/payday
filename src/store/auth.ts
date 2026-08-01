@@ -48,6 +48,7 @@ export function initAuth(): void {
         history: {},
         archivedWeeks: {},
         members: {},
+        priorPayments: {},
       });
       return;
     }

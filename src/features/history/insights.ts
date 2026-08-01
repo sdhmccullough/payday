@@ -2,7 +2,7 @@
 // weekStart (local-calendar keys), which every entry has; paidAt refines the
 // summary windows when present.
 
-import type { HistoryEntry } from '../../lib/schema';
+import type { HistoryEntry, PriorPayment } from '../../lib/schema';
 import {
   currentWeekSaturday,
   formatShort,
@@ -28,6 +28,8 @@ export interface Summary {
   thisMonthCents: number;
   ytdCents: number;
   allTimeCents: number;
+  /** Portion of allTimeCents that came from imported pre-app bank records. */
+  priorCents: number;
 }
 
 function entryDate(e: HistoryEntry): Date | null {
@@ -36,20 +38,29 @@ function entryDate(e: HistoryEntry): Date | null {
   return null;
 }
 
-export function summarize(entries: HistoryEntry[], now = new Date()): Summary {
+export function summarize(
+  entries: HistoryEntry[],
+  prior: PriorPayment[] = [],
+  now = new Date(),
+): Summary {
   let thisMonthCents = 0;
   let ytdCents = 0;
   let allTimeCents = 0;
-  for (const e of entries) {
-    allTimeCents += e.amountPaidCents;
-    const d = entryDate(e);
-    if (!d) continue;
+  let priorCents = 0;
+  const bucket = (d: Date | null, cents: number) => {
+    allTimeCents += cents;
+    if (!d) return;
     if (d.getFullYear() === now.getFullYear()) {
-      ytdCents += e.amountPaidCents;
-      if (d.getMonth() === now.getMonth()) thisMonthCents += e.amountPaidCents;
+      ytdCents += cents;
+      if (d.getMonth() === now.getMonth()) thisMonthCents += cents;
     }
+  };
+  for (const e of entries) bucket(entryDate(e), e.amountPaidCents);
+  for (const p of prior) {
+    priorCents += p.amountCents;
+    bucket(p.dateKey ? parseDateKey(p.dateKey) : null, p.amountCents);
   }
-  return { thisMonthCents, ytdCents, allTimeCents };
+  return { thisMonthCents, ytdCents, allTimeCents, priorCents };
 }
 
 /** The N most recent Sat-anchored weeks (oldest first), summed per week. */
@@ -83,21 +94,39 @@ export function lastNWeeks(
   return points;
 }
 
-/** The N most recent calendar months (oldest first), summed per month. */
+/** The N most recent calendar months (oldest first), summed per month.
+ * Imported pre-app payments contribute pay (but no minutes — hours were
+ * never recorded for them). */
 export function monthlyRollup(
   entries: HistoryEntry[],
   n: number,
   now = new Date(),
+  prior: PriorPayment[] = [],
 ): MonthPoint[] {
   const sums = new Map<string, { payCents: number; minutes: number }>();
+  const add = (key: string, payCents: number, minutes: number) => {
+    const s = sums.get(key) ?? { payCents: 0, minutes: 0 };
+    s.payCents += payCents;
+    s.minutes += minutes;
+    sums.set(key, s);
+  };
   for (const e of entries) {
     if (!e.weekStart) continue;
     const d = parseDateKey(e.weekStart);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const s = sums.get(key) ?? { payCents: 0, minutes: 0 };
-    s.payCents += e.amountPaidCents;
-    s.minutes += e.minutes;
-    sums.set(key, s);
+    add(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      e.amountPaidCents,
+      e.minutes,
+    );
+  }
+  for (const p of prior) {
+    if (!p.dateKey) continue;
+    const d = parseDateKey(p.dateKey);
+    add(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      p.amountCents,
+      0,
+    );
   }
   const points: MonthPoint[] = [];
   const cursor = new Date(now.getFullYear(), now.getMonth() - (n - 1), 1);

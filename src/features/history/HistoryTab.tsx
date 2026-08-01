@@ -72,6 +72,7 @@ function Chip({ label, value, tone }: { label: string; value: string; tone?: 'wa
 
 export function HistoryTab() {
   const history = useStore((s) => s.history);
+  const priorPayments = useStore((s) => s.priorPayments);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [year, setYear] = useState<number | 'all'>('all');
   const [month, setMonth] = useState<number | 'all'>('all');
@@ -81,8 +82,9 @@ export function HistoryTab() {
     [history],
   );
   const allEntries = useMemo(() => ordered.map(([, e]) => e), [ordered]);
+  const prior = useMemo(() => Object.values(priorPayments), [priorPayments]);
 
-  const summary = useMemo(() => summarize(allEntries), [allEntries]);
+  const summary = useMemo(() => summarize(allEntries, prior), [allEntries, prior]);
   const years = useMemo(() => historyYears(allEntries), [allEntries]);
   const months = useMemo(
     () => (year === 'all' ? [] : historyMonths(allEntries, year)),
@@ -129,6 +131,12 @@ export function HistoryTab() {
             <StatTile label="Year to date" cents={summary.ytdCents} />
             <StatTile label="All-time" cents={summary.allTimeCents} />
           </div>
+          {summary.priorCents > 0 ? (
+            <p className="text-xs text-muted">
+              Includes {formatCents(summary.priorCents)} of cash withdrawals
+              imported from bank records, before the app tracked payments.
+            </p>
+          ) : null}
 
           <Suspense
             fallback={
@@ -138,7 +146,7 @@ export function HistoryTab() {
               />
             }
           >
-            <ChartsPanel entries={allEntries} />
+            <ChartsPanel entries={allEntries} prior={prior} />
           </Suspense>
 
           {years.length > 1 || months.length > 0 ? (

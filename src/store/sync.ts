@@ -23,6 +23,7 @@ import {
   normalizeHistory,
   normalizeKeyed,
   normalizeMember,
+  normalizePriorPayment,
   normalizeSettings,
   normalizeTxn,
   normalizeWeek,
@@ -54,6 +55,7 @@ const CACHE_SLICES = [
   'history',
   'archivedWeeks',
   'members',
+  'priorPayments',
 ] as const;
 
 function cacheKey(u: string, hid: string): string {
@@ -75,6 +77,7 @@ function hydrateFromCache(hid: string): void {
       history: normalizeKeyed(cached.history, normalizeHistory),
       archivedWeeks: normalizeKeyed(cached.archivedWeeks, normalizeArchived),
       members: normalizeKeyed(cached.members, normalizeMember),
+      priorPayments: normalizeKeyed(cached.priorPayments, normalizePriorPayment),
     });
   } catch {
     /* corrupt cache — live data will replace it */
@@ -141,6 +144,10 @@ export async function attachHousehold(hid: string): Promise<void> {
       (v) => patchStore({ archivedWeeks: normalizeKeyed(v, normalizeArchived) }),
     ],
     ['members', (v) => patchStore({ members: normalizeKeyed(v, normalizeMember) })],
+    [
+      'priorPayments',
+      (v) => patchStore({ priorPayments: normalizeKeyed(v, normalizePriorPayment) }),
+    ],
   ];
 
   for (const [path, apply] of nodes) {

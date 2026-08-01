@@ -4,6 +4,7 @@ import type {
   CashTxn,
   HistoryEntry,
   Member,
+  PriorPayment,
   Settings,
   WeekState,
 } from '../lib/schema';
@@ -37,6 +38,7 @@ interface Store {
   history: Record<string, HistoryEntry>;
   archivedWeeks: Record<string, ArchivedWeek>;
   members: Record<string, Member>;
+  priorPayments: Record<string, PriorPayment>;
 
   // ui
   tab: Tab;
@@ -58,6 +60,7 @@ export const useStore = create<Store>((set) => ({
   history: {},
   archivedWeeks: {},
   members: {},
+  priorPayments: {},
 
   tab: 'timesheet',
   setTab: (tab) => set({ tab }),

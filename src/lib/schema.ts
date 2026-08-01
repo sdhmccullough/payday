@@ -66,6 +66,13 @@ export interface Member {
   joinedAt: number | null;
 }
 
+/** Imported bank-recorded cash payment from before the app tracked payments. */
+export interface PriorPayment {
+  dateKey: string; // YYYY-MM-DD
+  amountCents: Cents;
+  label: string;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   hourlyRateCents: 2200,
   fuelRateCents: 1000,
@@ -193,5 +200,14 @@ export function normalizeMember(v: unknown): Member {
   return {
     email: str(o.email),
     joinedAt: typeof o.joinedAt === 'number' ? o.joinedAt : null,
+  };
+}
+
+export function normalizePriorPayment(v: unknown): PriorPayment {
+  const o = rec(v);
+  return {
+    dateKey: str(o.dateKey),
+    amountCents: num(o.amountCents),
+    label: str(o.label),
   };
 }
