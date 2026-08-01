@@ -148,6 +148,10 @@ export async function attachHousehold(hid: string): Promise<void> {
       'priorPayments',
       (v) => patchStore({ priorPayments: normalizeKeyed(v, normalizePriorPayment) }),
     ],
+    [
+      'meta/ownerUid',
+      (v) => patchStore({ ownerUid: typeof v === 'string' ? v : null }),
+    ],
   ];
 
   for (const [path, apply] of nodes) {
@@ -431,25 +435,121 @@ export async function createHousehold(uidVal: string, email: string): Promise<st
   return uidVal;
 }
 
-/** Join by household code (legacy flow; invites replace this in Phase 3). */
-export async function joinHousehold(
+// ---- invites --------------------------------------------------------------
+
+const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
+// No 0/O/1/I — tokens get read aloud and retyped.
+const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function randomToken(length = 10): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (const b of bytes) out += TOKEN_ALPHABET[b % TOKEN_ALPHABET.length];
+  return out;
+}
+
+export interface Invite {
+  token: string;
+  url: string;
+  expiresAt: number;
+}
+
+/** Create a single-use invite link for the current household (rules enforce
+ * expiry and single use server-side). */
+export async function createInvite(): Promise<Invite> {
+  const hid = currentHid;
+  const u = uid();
+  if (!hid || !u) throw new Error('Not attached to a household.');
+  const token = randomToken();
+  const expiresAt = Date.now() + INVITE_TTL_MS;
+  await update(ref(db, `invites/${token}`), {
+    hid,
+    createdBy: u,
+    createdAt: serverTimestamp(),
+    expiresAt,
+  });
+  return {
+    token,
+    url: `${location.origin}/?invite=${token}`,
+    expiresAt,
+  };
+}
+
+/** Redeem an invite: joins its household and returns the household id. */
+export async function joinViaInvite(
   uidVal: string,
   email: string,
-  hid: string,
-): Promise<void> {
+  token: string,
+): Promise<string> {
+  const snap = await get(ref(db, `invites/${token}`));
+  const invite = snap.val() as {
+    hid?: string;
+    expiresAt?: number;
+    usedBy?: string;
+  } | null;
+  if (!invite || typeof invite.hid !== 'string') {
+    throw new Error('This invite link is invalid or was revoked.');
+  }
+  if (invite.usedBy) {
+    if (invite.usedBy === uidVal) return invite.hid; // already redeemed by us
+    throw new Error('This invite link has already been used.');
+  }
+  if (typeof invite.expiresAt !== 'number' || invite.expiresAt <= Date.now()) {
+    throw new Error('This invite link has expired. Ask for a new one.');
+  }
+
   const updates: Record<string, unknown> = {};
-  updates[`households/${hid}/members/${uidVal}`] = {
+  updates[`households/${invite.hid}/members/${uidVal}`] = {
     email,
     joinedAt: serverTimestamp(),
+    inviteToken: token,
   };
-  updates[`userHouseholds/${uidVal}`] = hid;
+  updates[`userHouseholds/${uidVal}`] = invite.hid;
+  updates[`invites/${token}/usedBy`] = uidVal;
   try {
     await update(ref(db), updates);
   } catch (err) {
-    const msg = String((err as { code?: string; message?: string })?.code ?? err);
+    const msg = String((err as { code?: string })?.code ?? err);
     if (/permission.denied/i.test(msg)) {
-      throw new Error('Household not found. Check the code and try again.');
+      // Rules re-check expiry/single-use atomically; a race lands here.
+      throw new Error('This invite link is no longer valid. Ask for a new one.');
     }
     throw err;
+  }
+  return invite.hid;
+}
+
+// ---- membership -----------------------------------------------------------
+
+/** Owner removes a member (rules also allow removing yourself). */
+export function removeMember(targetUid: string): Promise<void> {
+  return writing(remove(hhRef(`members/${targetUid}`)));
+}
+
+/** Leave the current household and fall back to (or create) your own. */
+export async function leaveHousehold(uidVal: string, email: string): Promise<void> {
+  const hid = currentHid;
+  if (!hid || hid === uidVal) return;
+  const updates: Record<string, unknown> = {};
+  updates[`households/${hid}/members/${uidVal}`] = null;
+  updates[`households/${uidVal}/members/${uidVal}`] = {
+    email,
+    joinedAt: serverTimestamp(),
+  };
+  updates[`userHouseholds/${uidVal}`] = uidVal;
+  await update(ref(db), updates);
+}
+
+/** True if we can still read our member entry; PERMISSION_DENIED means we
+ * were removed from the household. Network failures resolve true (benefit
+ * of the doubt — offline must not eject anyone). */
+export async function verifyMembership(hid: string, uidVal: string): Promise<boolean> {
+  if (hid === uidVal) return true;
+  try {
+    await get(ref(db, `households/${hid}/members/${uidVal}`));
+    return true;
+  } catch (err) {
+    return !/permission.denied/i.test(String((err as { code?: string })?.code ?? err));
   }
 }

@@ -39,10 +39,14 @@ interface Store {
   archivedWeeks: Record<string, ArchivedWeek>;
   members: Record<string, Member>;
   priorPayments: Record<string, PriorPayment>;
+  ownerUid: string | null;
 
   // ui
   tab: Tab;
   setTab: (tab: Tab) => void;
+  /** Invite token from a ?invite= link, pending user confirmation. */
+  pendingInvite: string | null;
+  setPendingInvite: (token: string | null) => void;
 }
 
 export const useStore = create<Store>((set) => ({
@@ -61,9 +65,12 @@ export const useStore = create<Store>((set) => ({
   archivedWeeks: {},
   members: {},
   priorPayments: {},
+  ownerUid: null,
 
   tab: 'timesheet',
   setTab: (tab) => set({ tab }),
+  pendingInvite: null,
+  setPendingInvite: (token) => set({ pendingInvite: token }),
 }));
 
 /** Imperative setter for non-React modules (sync layer, auth). */

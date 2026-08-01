@@ -16,8 +16,10 @@ import {
   attachHousehold,
   createHousehold,
   detachHousehold,
-  joinHousehold,
+  joinViaInvite,
+  leaveHousehold,
   lookupHouseholdId,
+  verifyMembership,
 } from './sync';
 import { currentWeekStart } from '../lib/dates';
 import { DEFAULT_SETTINGS } from '../lib/schema';
@@ -29,6 +31,16 @@ function errCode(err: unknown): string {
 }
 
 export function initAuth(): void {
+  // Capture an invite token arriving via link, then clean the URL.
+  const params = new URLSearchParams(location.search);
+  const inviteToken = params.get('invite');
+  if (inviteToken) {
+    patchStore({ pendingInvite: inviteToken });
+    params.delete('invite');
+    const qs = params.toString();
+    history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''));
+  }
+
   onAuthStateChanged(auth, (user) => {
     if (!user) {
       detachHousehold();
@@ -61,6 +73,10 @@ export function initAuth(): void {
       try {
         let hid = await lookupHouseholdId(user.uid);
         if (!hid) hid = await createHousehold(user.uid, user.email ?? '');
+        if (!(await verifyMembership(hid, user.uid))) {
+          // Removed from the household — fall back to our own.
+          hid = await createHousehold(user.uid, user.email ?? '');
+        }
         await attachHousehold(hid);
       } catch (err) {
         console.error('Household setup failed:', err);
@@ -114,11 +130,21 @@ export async function signOutUser(): Promise<void> {
   await signOut(auth);
 }
 
-export async function joinHouseholdByCode(code: string): Promise<void> {
+/** Redeem the pending ?invite= token (called after user confirmation). */
+export async function redeemPendingInvite(): Promise<void> {
+  const { user, pendingInvite } = readStore();
+  if (!user || !pendingInvite) return;
+  const hid = await joinViaInvite(user.uid, user.email, pendingInvite);
+  patchStore({ pendingInvite: null });
+  await attachHousehold(hid);
+}
+
+/** Leave the current shared household and switch to your own. */
+export async function leaveCurrentHousehold(): Promise<void> {
   const { user } = readStore();
-  if (!user) throw new Error('Not signed in.');
-  await joinHousehold(user.uid, user.email, code);
-  await attachHousehold(code);
+  if (!user) return;
+  await leaveHousehold(user.uid, user.email);
+  await attachHousehold(user.uid);
 }
 
 export { useStore };

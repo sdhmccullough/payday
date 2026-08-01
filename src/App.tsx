@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useStore, type Tab } from './store/useStore';
+import { redeemPendingInvite } from './store/auth';
+import { toast, toastError } from './components/ui/Toast';
+import { ConfirmDialog } from './components/ui/Dialog';
 import { SignInScreen } from './features/auth/SignInScreen';
 import { TimesheetTab, fillWeekDefaults } from './features/timesheet/TimesheetTab';
 import { CashTab } from './features/cash/CashTab';
@@ -126,6 +129,34 @@ function AppShell() {
   );
 }
 
+function InvitePrompt() {
+  const user = useStore((s) => s.user);
+  const pendingInvite = useStore((s) => s.pendingInvite);
+  const setPendingInvite = useStore((s) => s.setPendingInvite);
+
+  return (
+    <ConfirmDialog
+      open={user !== null && pendingInvite !== null}
+      onOpenChange={(o) => {
+        if (!o) setPendingInvite(null);
+      }}
+      title="Join household?"
+      body="You've been invited to a shared PayDay household. Joining switches you to their timesheet, cash drawer, and history."
+      confirmLabel="Join household"
+      onConfirm={() => {
+        redeemPendingInvite()
+          .then(() => toast('Joined household', 'Data is now syncing.'))
+          .catch((err) =>
+            toastError(
+              'Could not join',
+              err instanceof Error ? err.message : 'Try again.',
+            ),
+          );
+      }}
+    />
+  );
+}
+
 export default function App() {
   const user = useStore((s) => s.user);
   const authReady = useStore((s) => s.authReady);
@@ -141,6 +172,7 @@ export default function App() {
       ) : (
         <SignInScreen />
       )}
+      <InvitePrompt />
       <Toaster />
       <UpdatePrompt />
     </>
