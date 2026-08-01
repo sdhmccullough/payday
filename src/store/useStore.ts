@@ -52,6 +52,8 @@ interface Store {
   setPendingInvite: (token: string | null) => void;
   /** True when the browser offered a deferred install prompt. */
   installAvailable: boolean;
+  /** Preview-channel demo: sample data, no auth, nothing persists. */
+  demoMode: boolean;
 }
 
 export const useStore = create<Store>((set) => ({
@@ -79,6 +81,7 @@ export const useStore = create<Store>((set) => ({
   pendingInvite: null,
   setPendingInvite: (token) => set({ pendingInvite: token }),
   installAvailable: false,
+  demoMode: false,
 }));
 
 /** Imperative setter for non-React modules (sync layer, auth). */

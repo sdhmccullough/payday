@@ -112,7 +112,9 @@ function schedulePersist(): void {
 }
 
 function hhRef(path = ''): DatabaseReference {
-  const hid = currentHid;
+  // Demo mode: point writes at a rules-denied dummy path so interactions
+  // fail softly (async, caught, toasted) instead of throwing in handlers.
+  const hid = readStore().demoMode ? 'demo' : currentHid;
   if (!hid) throw new Error('No household attached');
   return ref(db, `households/${hid}${path ? '/' + path : ''}`);
 }

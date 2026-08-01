@@ -22,6 +22,7 @@ import {
   verifyMembership,
 } from './sync';
 import { currentWeekStart } from '../lib/dates';
+import { isDemoRequested, seedDemoStore } from '../lib/demo';
 import { DEFAULT_SETTINGS } from '../lib/schema';
 
 const provider = new GoogleAuthProvider();
@@ -31,6 +32,12 @@ function errCode(err: unknown): string {
 }
 
 export function initAuth(): void {
+  // Preview channels get demo mode: sample data, no sign-in, no Firebase.
+  if (isDemoRequested()) {
+    seedDemoStore();
+    return;
+  }
+
   // Capture an invite token arriving via link, then clean the URL.
   const params = new URLSearchParams(location.search);
   const inviteToken = params.get('invite');
