@@ -23,10 +23,15 @@ export function SavePayDialog({
   open,
   onOpenChange,
   calc,
+  title = 'Save & Pay',
+  onCommit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   calc: SavePayComputation | null;
+  title?: string;
+  /** Override the commit (e.g. paying an archived week). */
+  onCommit?: (calc: SavePayComputation) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   if (!calc) return null;
@@ -34,7 +39,7 @@ export function SavePayDialog({
   const confirm = async () => {
     setBusy(true);
     try {
-      await commitSavePay(calc);
+      await (onCommit ?? commitSavePay)(calc);
       onOpenChange(false);
       toast(
         `Paid ${formatCents(calc.paidCents)} from cash`,
@@ -51,7 +56,7 @@ export function SavePayDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Save & Pay">
+    <Dialog open={open} onOpenChange={onOpenChange} title={title}>
       <div className="divide-y divide-line">
         <Row label="Hours" value={(calc.minutes / 60).toFixed(2)} />
         <Row label="Wages" value={formatCents(calc.wagesCents)} />

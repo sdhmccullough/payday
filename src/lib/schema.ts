@@ -28,6 +28,8 @@ export interface WeekState {
 export interface Settings {
   hourlyRateCents: Cents;
   fuelRateCents: Cents;
+  /** Day pay is due, JS getDay() numbering (0=Sun … 6=Sat). Default Friday. */
+  paydayDay: number;
 }
 
 export interface CashTxn {
@@ -66,9 +68,17 @@ export interface Member {
   joinedAt: number | null;
 }
 
+/** Imported bank-recorded cash payment from before the app tracked payments. */
+export interface PriorPayment {
+  dateKey: string; // YYYY-MM-DD
+  amountCents: Cents;
+  label: string;
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   hourlyRateCents: 2200,
   fuelRateCents: 1000,
+  paydayDay: 5,
 };
 
 // ---- normalizers ----------------------------------------------------------
@@ -111,9 +121,11 @@ export function normalizeWeek(v: unknown): WeekState {
 
 export function normalizeSettings(v: unknown): Settings {
   const o = rec(v);
+  const day = num(o.paydayDay, DEFAULT_SETTINGS.paydayDay);
   return {
     hourlyRateCents: num(o.hourlyRateCents, DEFAULT_SETTINGS.hourlyRateCents),
     fuelRateCents: num(o.fuelRateCents, DEFAULT_SETTINGS.fuelRateCents),
+    paydayDay: day >= 0 && day <= 6 ? Math.round(day) : DEFAULT_SETTINGS.paydayDay,
   };
 }
 
@@ -193,5 +205,14 @@ export function normalizeMember(v: unknown): Member {
   return {
     email: str(o.email),
     joinedAt: typeof o.joinedAt === 'number' ? o.joinedAt : null,
+  };
+}
+
+export function normalizePriorPayment(v: unknown): PriorPayment {
+  const o = rec(v);
+  return {
+    dateKey: str(o.dateKey),
+    amountCents: num(o.amountCents),
+    label: str(o.label),
   };
 }

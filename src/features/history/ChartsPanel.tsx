@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { HistoryEntry } from '../../lib/schema';
+import type { HistoryEntry, PriorPayment } from '../../lib/schema';
 import { formatCents } from '../../lib/money';
 import { lastNWeeks, monthlyRollup } from './insights';
 
@@ -56,7 +56,13 @@ function yTickFormatter(metric: Metric): (v: number) => string {
     : (v) => `${v}h`;
 }
 
-export default function ChartsPanel({ entries }: { entries: HistoryEntry[] }) {
+export default function ChartsPanel({
+  entries,
+  prior = [],
+}: {
+  entries: HistoryEntry[];
+  prior?: PriorPayment[];
+}) {
   const [metric, setMetric] = useState<Metric>('pay');
 
   const weekly = useMemo(
@@ -69,11 +75,13 @@ export default function ChartsPanel({ entries }: { entries: HistoryEntry[] }) {
   );
   const monthly = useMemo(
     () =>
-      monthlyRollup(entries, 12).map((p) => ({
-        label: p.label,
-        value: metric === 'pay' ? p.payCents / 100 : p.minutes / 60,
-      })),
-    [entries, metric],
+      monthlyRollup(entries, 12, new Date(), metric === 'pay' ? prior : []).map(
+        (p) => ({
+          label: p.label,
+          value: metric === 'pay' ? p.payCents / 100 : p.minutes / 60,
+        }),
+      ),
+    [entries, prior, metric],
   );
 
   const metricLabel = metric === 'pay' ? 'pay' : 'hours';
@@ -174,6 +182,11 @@ export default function ChartsPanel({ entries }: { entries: HistoryEntry[] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {prior.length > 0 && metric === 'pay' ? (
+        <p className="mt-2 text-xs text-muted">
+          Monthly totals include imported bank withdrawals from before the app.
+        </p>
+      ) : null}
     </div>
   );
 }

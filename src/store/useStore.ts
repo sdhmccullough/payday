@@ -4,6 +4,7 @@ import type {
   CashTxn,
   HistoryEntry,
   Member,
+  PriorPayment,
   Settings,
   WeekState,
 } from '../lib/schema';
@@ -37,10 +38,17 @@ interface Store {
   history: Record<string, HistoryEntry>;
   archivedWeeks: Record<string, ArchivedWeek>;
   members: Record<string, Member>;
+  priorPayments: Record<string, PriorPayment>;
+  ownerUid: string | null;
 
   // ui
   tab: Tab;
   setTab: (tab: Tab) => void;
+  /** Invite token from a ?invite= link, pending user confirmation. */
+  pendingInvite: string | null;
+  setPendingInvite: (token: string | null) => void;
+  /** True when the browser offered a deferred install prompt. */
+  installAvailable: boolean;
 }
 
 export const useStore = create<Store>((set) => ({
@@ -58,9 +66,14 @@ export const useStore = create<Store>((set) => ({
   history: {},
   archivedWeeks: {},
   members: {},
+  priorPayments: {},
+  ownerUid: null,
 
   tab: 'timesheet',
   setTab: (tab) => set({ tab }),
+  pendingInvite: null,
+  setPendingInvite: (token) => set({ pendingInvite: token }),
+  installAvailable: false,
 }));
 
 /** Imperative setter for non-React modules (sync layer, auth). */

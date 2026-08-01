@@ -1,17 +1,23 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { joinHouseholdByCode, signOutUser } from '../../store/auth';
-import { setRates } from '../../store/sync';
+import { leaveCurrentHousehold, signOutUser } from '../../store/auth';
+import { createInvite, removeMember, setRates } from '../../store/sync';
 import {
   centsToDollars,
   parseDollarInput,
 } from '../../lib/money';
 import { applyTheme, getTheme, type ThemeChoice } from '../../lib/theme';
-import { Dialog } from '../../components/ui/Dialog';
-import { Button } from '../../components/ui/Button';
+import { ConfirmDialog, Dialog } from '../../components/ui/Dialog';
+import { Button, IconButton } from '../../components/ui/Button';
+import { Switch } from '../../components/ui/Switch';
 import { toast, toastError } from '../../components/ui/Toast';
-import { CheckIcon, CopyIcon } from '../../components/icons';
+import { TrashIcon } from '../../components/icons';
 import { debounce } from '../../lib/debounce';
+import { setPaydayDay } from '../../store/sync';
+import { isNotifyEnabled, setNotifyEnabled } from '../../lib/notify';
+import { needsIosInstallHint, promptInstall } from '../../lib/install';
+
+const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const debouncedRates = debounce((hourly: number, fuel: number) => {
   setRates(hourly, fuel).catch(() => toastError('Rates not synced'));
@@ -60,38 +66,37 @@ export function SettingsDialog({
 }) {
   const settings = useStore((s) => s.settings);
   const user = useStore((s) => s.user);
-  const householdId = useStore((s) => s.householdId);
-  const [joinCode, setJoinCode] = useState('');
-  const [joining, setJoining] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const members = useStore((s) => s.members);
+  const ownerUid = useStore((s) => s.ownerUid);
+  const installAvailable = useStore((s) => s.installAvailable);
+  const [inviting, setInviting] = useState(false);
+  const [removeUid, setRemoveUid] = useState<string | null>(null);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(getTheme());
+  const [notify, setNotify] = useState(isNotifyEnabled());
 
-  const copyCode = async () => {
-    if (!householdId) return;
-    try {
-      await navigator.clipboard.writeText(householdId);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toastError('Copy failed', 'Select and copy the code manually.');
-    }
-  };
+  const isOwner = user !== null && ownerUid === user.uid;
 
-  const join = async () => {
-    const code = joinCode.trim();
-    if (!code) return;
-    setJoining(true);
+  const invite = async () => {
+    setInviting(true);
     try {
-      await joinHouseholdByCode(code);
-      setJoinCode('');
-      toast('Joined household', 'Data will now sync.');
+      const inv = await createInvite();
+      const shared = typeof navigator.share === 'function'
+        ? await navigator.share({ title: 'Join my PayDay household', url: inv.url })
+            .then(() => true)
+            .catch(() => false)
+        : false;
+      if (!shared) {
+        await navigator.clipboard.writeText(inv.url);
+        toast('Invite link copied', 'Single-use, expires in 72 hours.');
+      } else {
+        toast('Invite link shared', 'Single-use, expires in 72 hours.');
+      }
     } catch (err) {
-      toastError(
-        'Could not join',
-        err instanceof Error ? err.message : 'Try again.',
-      );
+      console.error(err);
+      toastError('Could not create invite', 'Check your connection and try again.');
     } finally {
-      setJoining(false);
+      setInviting(false);
     }
   };
 
@@ -114,56 +119,107 @@ export function SettingsDialog({
             cents={settings.fuelRateCents}
             onCents={(c) => debouncedRates(settings.hourlyRateCents, c)}
           />
+          <label
+            htmlFor="payday-day"
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <span className="text-muted">Payday</span>
+            <select
+              id="payday-day"
+              value={settings.paydayDay}
+              onChange={(e) =>
+                setPaydayDay(Number(e.target.value)).catch(() =>
+                  toastError('Not synced'),
+                )
+              }
+              className="min-h-11 rounded-(--radius-control) border border-line bg-surface-2 px-2 text-sm"
+            >
+              {DAY_LABELS.map((d, i) => (
+                <option key={d} value={i}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted">
+              Payday reminder
+              <span className="block text-xs">
+                Notifies on this device when the app opens on payday
+              </span>
+            </span>
+            <Switch
+              checked={notify}
+              onCheckedChange={(on) => {
+                void setNotifyEnabled(on).then((granted) => {
+                  setNotify(granted);
+                  if (on && !granted)
+                    toastError(
+                      'Notifications blocked',
+                      'Allow notifications for this site in your browser settings.',
+                    );
+                });
+              }}
+              label="Payday reminder notifications"
+            />
+          </div>
         </section>
 
         <section aria-label="Household" className="space-y-3">
           <h3 className="text-xs font-bold tracking-wide text-muted uppercase">
             Household
           </h3>
-          <div className="flex items-center justify-between gap-2 text-sm">
-            <span className="text-muted">Your code</span>
-            <span className="flex min-w-0 items-center gap-1">
-              <code className="truncate rounded bg-surface-2 px-2 py-1 font-mono text-xs">
-                {householdId ?? '—'}
-              </code>
-              <button
-                type="button"
-                aria-label="Copy household code"
-                onClick={() => void copyCode()}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-surface-2 hover:text-ink"
-              >
-                {copied ? (
-                  <CheckIcon className="size-4 text-accent" />
-                ) : (
-                  <CopyIcon className="size-4" />
-                )}
-              </button>
-            </span>
-          </div>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void join();
-            }}
-          >
-            <label htmlFor="join-input" className="sr-only">
-              Household code to join
-            </label>
-            <input
-              id="join-input"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value)}
-              placeholder="Paste a code to join"
-              className="min-h-11 min-w-0 flex-1 rounded-(--radius-control) border border-line bg-surface-2 px-3 text-sm"
-            />
-            <Button type="submit" disabled={joining || !joinCode.trim()}>
-              {joining ? 'Joining…' : 'Join'}
+          <ul className="space-y-1.5">
+            {Object.entries(members).map(([uid, m]) => {
+              const isSelf = uid === user?.uid;
+              return (
+                <li
+                  key={uid}
+                  className="flex min-h-11 items-center justify-between gap-2 rounded-(--radius-control) bg-surface-2 px-3 py-1.5 text-sm"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate">
+                      {m.email || uid}
+                      {isSelf ? <span className="text-muted"> (you)</span> : null}
+                    </span>
+                    <span className="block text-xs text-muted">
+                      {uid === ownerUid ? 'Owner' : 'Member'}
+                      {m.joinedAt
+                        ? ` · joined ${new Date(m.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                        : ''}
+                    </span>
+                  </span>
+                  {isOwner && !isSelf ? (
+                    <IconButton
+                      label={`Remove ${m.email || 'member'}`}
+                      className="!size-9 shrink-0"
+                      onClick={() => setRemoveUid(uid)}
+                    >
+                      <TrashIcon className="size-4" />
+                    </IconButton>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              disabled={inviting}
+              onClick={() => void invite()}
+            >
+              {inviting ? 'Creating…' : 'Invite someone'}
             </Button>
-          </form>
+            {!isOwner ? (
+              <Button variant="danger" onClick={() => setLeaveOpen(true)}>
+                Leave
+              </Button>
+            ) : null}
+          </div>
           <p className="text-xs text-muted">
-            Share your code with someone to sync one household together. Joining
-            another household switches you to their data.
+            Invite links are single-use and expire after 72 hours. Everyone in
+            the household shares the same timesheet, cash drawer, and history.
           </p>
         </section>
 
@@ -194,6 +250,27 @@ export function SettingsDialog({
           </div>
         </section>
 
+        {installAvailable || needsIosInstallHint() ? (
+          <section aria-label="App" className="space-y-3">
+            <h3 className="text-xs font-bold tracking-wide text-muted uppercase">
+              App
+            </h3>
+            {installAvailable ? (
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted">Install PayDay on this device</span>
+                <Button variant="outline" onClick={() => void promptInstall()}>
+                  Install
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">
+                To install on iPhone: open the Share menu in Safari and choose
+                “Add to Home Screen.”
+              </p>
+            )}
+          </section>
+        ) : null}
+
         <section aria-label="Account" className="space-y-3">
           <h3 className="text-xs font-bold tracking-wide text-muted uppercase">
             Account
@@ -206,6 +283,37 @@ export function SettingsDialog({
           </div>
         </section>
       </div>
+
+      <ConfirmDialog
+        open={removeUid !== null}
+        onOpenChange={(o) => {
+          if (!o) setRemoveUid(null);
+        }}
+        title="Remove this member?"
+        body="They immediately lose access to the household's timesheet, cash, and history. Nothing they entered is deleted."
+        confirmLabel="Remove"
+        danger
+        onConfirm={() => {
+          if (removeUid)
+            removeMember(removeUid)
+              .then(() => toast('Member removed'))
+              .catch(() => toastError('Not synced', 'Try again.'));
+          setRemoveUid(null);
+        }}
+      />
+      <ConfirmDialog
+        open={leaveOpen}
+        onOpenChange={setLeaveOpen}
+        title="Leave this household?"
+        body="You'll switch to your own empty household. The shared data stays with the other members."
+        confirmLabel="Leave household"
+        danger
+        onConfirm={() => {
+          leaveCurrentHousehold()
+            .then(() => toast('Left household'))
+            .catch(() => toastError('Could not leave', 'Try again.'));
+        }}
+      />
     </Dialog>
   );
 }

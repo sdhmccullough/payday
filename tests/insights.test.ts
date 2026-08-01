@@ -32,11 +32,28 @@ describe('summarize', () => {
   it('buckets this-month / ytd / all-time by amountPaid', () => {
     const s = summarize(
       [entry('2026-07-18', 54000), entry('2026-06-20', 30000), entry('2025-12-27', 10000)],
+      [],
       NOW,
     );
     expect(s.thisMonthCents).toBe(54000);
     expect(s.ytdCents).toBe(84000);
     expect(s.allTimeCents).toBe(94000);
+    expect(s.priorCents).toBe(0);
+  });
+
+  it('folds imported prior payments into every window they fall in', () => {
+    const s = summarize(
+      [entry('2026-07-18', 54000)],
+      [
+        { dateKey: '2026-01-23', amountCents: 340000, label: 'Customer Withdrawal' },
+        { dateKey: '2025-06-06', amountCents: 200000, label: 'ATM Withdrawal' },
+      ],
+      NOW,
+    );
+    expect(s.allTimeCents).toBe(54000 + 340000 + 200000);
+    expect(s.ytdCents).toBe(54000 + 340000); // 2026 rows only
+    expect(s.thisMonthCents).toBe(54000); // no prior rows in July 2026
+    expect(s.priorCents).toBe(540000);
   });
 });
 
@@ -72,6 +89,18 @@ describe('monthlyRollup', () => {
     expect(points[11].payCents).toBe(54000);
     expect(points[5].month).toBe('2026-01');
     expect(points[5].payCents).toBe(20000);
+  });
+
+  it('merges prior payments into month buckets with zero minutes', () => {
+    const points = monthlyRollup(
+      [entry('2026-01-03', 20000, 600)],
+      12,
+      NOW,
+      [{ dateKey: '2026-01-23', amountCents: 340000, label: 'Customer Withdrawal' }],
+    );
+    const jan = points.find((p) => p.month === '2026-01')!;
+    expect(jan.payCents).toBe(20000 + 340000);
+    expect(jan.minutes).toBe(600); // prior rows contribute no hours
   });
 });
 

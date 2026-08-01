@@ -23,6 +23,7 @@ import {
   normalizeHistory,
   normalizeKeyed,
   normalizeMember,
+  normalizePriorPayment,
   normalizeSettings,
   normalizeTxn,
   normalizeWeek,
@@ -54,6 +55,7 @@ const CACHE_SLICES = [
   'history',
   'archivedWeeks',
   'members',
+  'priorPayments',
 ] as const;
 
 function cacheKey(u: string, hid: string): string {
@@ -75,6 +77,7 @@ function hydrateFromCache(hid: string): void {
       history: normalizeKeyed(cached.history, normalizeHistory),
       archivedWeeks: normalizeKeyed(cached.archivedWeeks, normalizeArchived),
       members: normalizeKeyed(cached.members, normalizeMember),
+      priorPayments: normalizeKeyed(cached.priorPayments, normalizePriorPayment),
     });
   } catch {
     /* corrupt cache — live data will replace it */
@@ -141,6 +144,14 @@ export async function attachHousehold(hid: string): Promise<void> {
       (v) => patchStore({ archivedWeeks: normalizeKeyed(v, normalizeArchived) }),
     ],
     ['members', (v) => patchStore({ members: normalizeKeyed(v, normalizeMember) })],
+    [
+      'priorPayments',
+      (v) => patchStore({ priorPayments: normalizeKeyed(v, normalizePriorPayment) }),
+    ],
+    [
+      'meta/ownerUid',
+      (v) => patchStore({ ownerUid: typeof v === 'string' ? v : null }),
+    ],
   ];
 
   for (const [path, apply] of nodes) {
@@ -224,6 +235,10 @@ export function resetWeekDays(): Promise<void> {
 
 export function setRates(hourlyRateCents: Cents, fuelRateCents: Cents): Promise<void> {
   return writing(update(hhRef('settings'), { hourlyRateCents, fuelRateCents }));
+}
+
+export function setPaydayDay(paydayDay: number): Promise<void> {
+  return writing(update(hhRef('settings'), { paydayDay }));
 }
 
 export function setBonus(bonusCents: Cents): Promise<void> {
@@ -339,6 +354,91 @@ export function commitSavePay(calc: SavePayComputation): Promise<void> {
   return writing(update(hhRef(), updates));
 }
 
+// ---- archived (unpaid) weeks ----------------------------------------------
+
+/** Same shape as computeSavePay, but against an archived week. Current
+ * carryover is deliberately excluded — it stays attached to the live week. */
+export function computeArchivedPay(weekStart: string): SavePayComputation | null {
+  const { archivedWeeks, settings, cashCounts } = readStore();
+  const archived = archivedWeeks[weekStart];
+  if (!archived) return null;
+  let minutes = 0;
+  let fuelDays = 0;
+  for (const day of Object.values(archived.days)) {
+    minutes += minutesBetween(day.start, day.end);
+    if (day.fuel) fuelDays++;
+  }
+  const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
+  const fuelCents = fuelDays * settings.fuelRateCents;
+  const totalCents = wagesCents + fuelCents + archived.bonusCents;
+  const { breakdown, paidCents, shortfallCents } = billBreakdown(totalCents, cashCounts);
+  return {
+    minutes,
+    wagesCents,
+    fuelCents,
+    bonusCents: archived.bonusCents,
+    carryoverCents: 0,
+    totalCents,
+    paidCents,
+    shortfallCents,
+    breakdown,
+  };
+}
+
+/** Pay an archived week: history + cash txn + bill counts + archive removal
+ * in one update; any shortfall folds into the live week's carryover. */
+export function commitArchivedPay(
+  weekStart: string,
+  calc: SavePayComputation,
+): Promise<void> {
+  const { cashCounts, week } = readStore();
+  const label = weekLabel(weekStart);
+  const now = Date.now();
+  const historyKey = push(child(ref(db), 'x')).key as string;
+  const txnKey = push(child(ref(db), 'x')).key as string;
+
+  const updates: Record<string, unknown> = {};
+  updates[`history/${historyKey}`] = {
+    weekStart,
+    minutes: calc.minutes,
+    wagesCents: calc.wagesCents,
+    fuelCents: calc.fuelCents,
+    bonusCents: calc.bonusCents,
+    carryoverCents: 0,
+    totalCents: calc.totalCents,
+    amountPaidCents: calc.paidCents,
+    shortfallCents: calc.shortfallCents,
+    breakdown: Object.keys(calc.breakdown).length ? calc.breakdown : null,
+    paidDateLabel: formatFull(new Date(now)),
+    paidAt: serverTimestamp(),
+    by: uid() ?? null,
+  };
+  if (calc.paidCents > 0) {
+    updates[`cashTransactions/${txnKey}`] = {
+      type: 'withdrawal',
+      label: `Payment: ${label} (late)`,
+      amountCents: calc.paidCents,
+      breakdown: Object.keys(calc.breakdown).length ? calc.breakdown : null,
+      dateLabel: formatFull(new Date(now)),
+      at: serverTimestamp(),
+      by: uid() ?? null,
+    };
+  }
+  for (const [bill, used] of Object.entries(calc.breakdown)) {
+    updates[`cash/counts/${bill}`] = Math.max(0, (cashCounts[bill] ?? 0) - used);
+  }
+  updates[`archivedWeeks/${weekStart}`] = null;
+  if (calc.shortfallCents > 0) {
+    updates['week/carryoverCents'] = week.carryoverCents + calc.shortfallCents;
+  }
+  return writing(update(hhRef(), updates));
+}
+
+/** Discard an archived week without paying it. */
+export function discardArchivedWeek(weekStart: string): Promise<void> {
+  return writing(remove(hhRef(`archivedWeeks/${weekStart}`)));
+}
+
 // ---- week rollover --------------------------------------------------------
 
 let reconciling = false;
@@ -424,25 +524,121 @@ export async function createHousehold(uidVal: string, email: string): Promise<st
   return uidVal;
 }
 
-/** Join by household code (legacy flow; invites replace this in Phase 3). */
-export async function joinHousehold(
+// ---- invites --------------------------------------------------------------
+
+const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
+// No 0/O/1/I — tokens get read aloud and retyped.
+const TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function randomToken(length = 10): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (const b of bytes) out += TOKEN_ALPHABET[b % TOKEN_ALPHABET.length];
+  return out;
+}
+
+export interface Invite {
+  token: string;
+  url: string;
+  expiresAt: number;
+}
+
+/** Create a single-use invite link for the current household (rules enforce
+ * expiry and single use server-side). */
+export async function createInvite(): Promise<Invite> {
+  const hid = currentHid;
+  const u = uid();
+  if (!hid || !u) throw new Error('Not attached to a household.');
+  const token = randomToken();
+  const expiresAt = Date.now() + INVITE_TTL_MS;
+  await update(ref(db, `invites/${token}`), {
+    hid,
+    createdBy: u,
+    createdAt: serverTimestamp(),
+    expiresAt,
+  });
+  return {
+    token,
+    url: `${location.origin}/?invite=${token}`,
+    expiresAt,
+  };
+}
+
+/** Redeem an invite: joins its household and returns the household id. */
+export async function joinViaInvite(
   uidVal: string,
   email: string,
-  hid: string,
-): Promise<void> {
+  token: string,
+): Promise<string> {
+  const snap = await get(ref(db, `invites/${token}`));
+  const invite = snap.val() as {
+    hid?: string;
+    expiresAt?: number;
+    usedBy?: string;
+  } | null;
+  if (!invite || typeof invite.hid !== 'string') {
+    throw new Error('This invite link is invalid or was revoked.');
+  }
+  if (invite.usedBy) {
+    if (invite.usedBy === uidVal) return invite.hid; // already redeemed by us
+    throw new Error('This invite link has already been used.');
+  }
+  if (typeof invite.expiresAt !== 'number' || invite.expiresAt <= Date.now()) {
+    throw new Error('This invite link has expired. Ask for a new one.');
+  }
+
   const updates: Record<string, unknown> = {};
-  updates[`households/${hid}/members/${uidVal}`] = {
+  updates[`households/${invite.hid}/members/${uidVal}`] = {
     email,
     joinedAt: serverTimestamp(),
+    inviteToken: token,
   };
-  updates[`userHouseholds/${uidVal}`] = hid;
+  updates[`userHouseholds/${uidVal}`] = invite.hid;
+  updates[`invites/${token}/usedBy`] = uidVal;
   try {
     await update(ref(db), updates);
   } catch (err) {
-    const msg = String((err as { code?: string; message?: string })?.code ?? err);
+    const msg = String((err as { code?: string })?.code ?? err);
     if (/permission.denied/i.test(msg)) {
-      throw new Error('Household not found. Check the code and try again.');
+      // Rules re-check expiry/single-use atomically; a race lands here.
+      throw new Error('This invite link is no longer valid. Ask for a new one.');
     }
     throw err;
+  }
+  return invite.hid;
+}
+
+// ---- membership -----------------------------------------------------------
+
+/** Owner removes a member (rules also allow removing yourself). */
+export function removeMember(targetUid: string): Promise<void> {
+  return writing(remove(hhRef(`members/${targetUid}`)));
+}
+
+/** Leave the current household and fall back to (or create) your own. */
+export async function leaveHousehold(uidVal: string, email: string): Promise<void> {
+  const hid = currentHid;
+  if (!hid || hid === uidVal) return;
+  const updates: Record<string, unknown> = {};
+  updates[`households/${hid}/members/${uidVal}`] = null;
+  updates[`households/${uidVal}/members/${uidVal}`] = {
+    email,
+    joinedAt: serverTimestamp(),
+  };
+  updates[`userHouseholds/${uidVal}`] = uidVal;
+  await update(ref(db), updates);
+}
+
+/** True if we can still read our member entry; PERMISSION_DENIED means we
+ * were removed from the household. Network failures resolve true (benefit
+ * of the doubt — offline must not eject anyone). */
+export async function verifyMembership(hid: string, uidVal: string): Promise<boolean> {
+  if (hid === uidVal) return true;
+  try {
+    await get(ref(db, `households/${hid}/members/${uidVal}`));
+    return true;
+  } catch (err) {
+    return !/permission.denied/i.test(String((err as { code?: string })?.code ?? err));
   }
 }

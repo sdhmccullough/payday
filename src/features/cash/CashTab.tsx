@@ -144,7 +144,11 @@ export function CashTab() {
   );
 
   return (
-    <section aria-label="Cash drawer" className="space-y-3">
+    <section
+      aria-label="Cash drawer"
+      className="space-y-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5 lg:space-y-0"
+    >
+      <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-muted">Cash on hand</h2>
         <Button variant="outline" onClick={() => setDepositOpen(true)}>
@@ -182,8 +186,10 @@ export function CashTab() {
           {formatCents(totalCents)}
         </span>
       </div>
+      </div>
 
-      <h3 className="pt-2 text-sm font-semibold text-muted">Transactions</h3>
+      <div className="space-y-3">
+      <h3 className="pt-2 text-sm font-semibold text-muted lg:pt-0">Transactions</h3>
       {ordered.length === 0 ? (
         <p className="rounded-(--radius-card) border border-dashed border-line p-6 text-center text-sm text-muted">
           No transactions yet
@@ -223,6 +229,8 @@ export function CashTab() {
           ))}
         </ul>
       )}
+
+      </div>
 
       <DepositDialog open={depositOpen} onOpenChange={setDepositOpen} />
       <ConfirmDialog
