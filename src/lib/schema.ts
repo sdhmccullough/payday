@@ -7,7 +7,7 @@
 
 import type { BillBreakdown, BillCounts, Cents } from './money';
 import { BILLS } from './money';
-import { currentWeekStart } from './dates';
+import { currentWeekStart, minutesBetween } from './dates';
 
 export const SCHEMA_VERSION = 2;
 
@@ -15,6 +15,8 @@ export interface DayEntry {
   start: string; // "HH:MM" 24h, '' = unset
   end: string;
   fuel: boolean;
+  /** Unpaid break minutes deducted from the day (rare; e.g. a midday outing). */
+  breakMinutes?: number;
   by?: string; // uid of last editor
 }
 
@@ -112,8 +114,8 @@ function rec(v: unknown): Record<string, unknown> {
  * switch stays authoritative. */
 export function withAutoFuel(
   existing: DayEntry | undefined,
-  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel'>>,
-): Partial<Pick<DayEntry, 'start' | 'end' | 'fuel'>> {
+  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>>,
+): Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>> {
   const setsTime = Boolean(patch.start) || Boolean(patch.end);
   const hadTime = Boolean(existing?.start) || Boolean(existing?.end);
   if (setsTime && !hadTime && patch.fuel === undefined) {
@@ -124,12 +126,22 @@ export function withAutoFuel(
 
 export function normalizeDay(v: unknown): DayEntry {
   const o = rec(v);
+  const brk = Math.max(0, Math.round(num(o.breakMinutes)));
   return {
     start: str(o.start),
     end: str(o.end),
     fuel: o.fuel === true,
+    breakMinutes: brk > 0 ? brk : undefined,
     by: typeof o.by === 'string' ? o.by : undefined,
   };
+}
+
+/** Paid minutes for a day: the start–end span minus any unpaid break. */
+export function dayMinutes(entry: DayEntry | undefined): number {
+  if (!entry) return 0;
+  const span = minutesBetween(entry.start, entry.end);
+  if (span <= 0) return 0;
+  return Math.max(0, span - (entry.breakMinutes ?? 0));
 }
 
 export function normalizeWeek(v: unknown): WeekState {

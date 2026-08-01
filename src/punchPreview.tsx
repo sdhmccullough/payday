@@ -27,7 +27,7 @@ useStore.setState({
   },
   presence: {
     [todayKey]: {
-      firstSeenAt: at(7, 58),
+      firstSeenAt: at(7, 52), // display 7:50, applies as 7:45 — rounding visible
       lastSeenAt: now - 45 * 60 * 1000, // departed 45 min ago → end suggested
       updatedAt: now - 60 * 1000, // heartbeat fresh
     },
@@ -39,6 +39,11 @@ createRoot(document.getElementById('root')!).render(
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <PunchBanner />
       <DayCard dayName="Friday" dateKey={todayKey} entry={undefined} isToday />
+      <DayCard
+        dayName="Thursday"
+        dateKey="2026-01-01"
+        entry={{ start: '08:00', end: '17:00', fuel: true, breakMinutes: 120 }}
+      />
     </div>
   </StrictMode>,
 );

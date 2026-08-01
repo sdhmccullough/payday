@@ -30,10 +30,21 @@ export function SuggestionChip({
 
   return (
     <div className="mt-2 flex items-center justify-between gap-2 rounded-(--radius-control) bg-accent-soft px-2.5 py-1.5 text-xs">
-      <span className="min-w-0 truncate text-accent">
-        {label}
-        {suggestion.sensorStale ? (
-          <span className="text-muted"> · sensor offline</span>
+      <span className="min-w-0 text-accent">
+        <span className="block truncate">
+          {label}
+          {suggestion.sensorStale ? (
+            <span className="text-muted"> · sensor offline</span>
+          ) : null}
+        </span>
+        {suggestion.rounded ? (
+          <span className="block truncate text-muted">
+            Applies as{' '}
+            {[suggestion.patch.start, suggestion.patch.end]
+              .filter(Boolean)
+              .map((t) => formatHHMM12(t as string))
+              .join(' – ')}
+          </span>
         ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-1">

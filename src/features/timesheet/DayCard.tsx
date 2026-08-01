@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import type { DayEntry } from '../../lib/schema';
+import { memo, useState } from 'react';
+import { dayMinutes, type DayEntry } from '../../lib/schema';
 import { formatShort, minutesBetween, parseDateKey } from '../../lib/dates';
 import { clearDay, setDayField } from '../../store/sync';
 import { Switch } from '../../components/ui/Switch';
@@ -27,10 +27,14 @@ export const DayCard = memo(function DayCard({
   const start = entry?.start ?? '';
   const end = entry?.end ?? '';
   const fuel = entry?.fuel ?? false;
-  const minutes = minutesBetween(start, end);
+  const breakMinutes = entry?.breakMinutes ?? 0;
+  const span = minutesBetween(start, end);
+  const minutes = dayMinutes(entry);
   const hasBoth = Boolean(start && end);
-  const invalidRange = hasBoth && minutes === 0;
+  const invalidRange = hasBoth && span === 0;
   const hasEntry = Boolean(start || end || fuel);
+  const [showBreak, setShowBreak] = useState(false);
+  const breakVisible = showBreak || breakMinutes > 0;
 
   return (
     <div
@@ -113,6 +117,34 @@ export const DayCard = memo(function DayCard({
           label={`Fuel reimbursement for ${dayName}`}
         />
       </div>
+
+      {breakVisible ? (
+        <label className="mt-2 flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted">Unpaid break</span>
+          <span className="flex items-center gap-1">
+            <input
+              inputMode="numeric"
+              value={breakMinutes > 0 ? String(breakMinutes) : ''}
+              placeholder="0"
+              aria-label={`Unpaid break minutes for ${dayName}`}
+              onChange={(e) => {
+                const n = Math.max(0, Math.round(Number(e.target.value) || 0));
+                setDayField(dateKey, { breakMinutes: n }).catch(onWriteError);
+              }}
+              className="min-h-10 w-16 rounded-(--radius-control) border border-line bg-surface-2 px-2 text-right text-sm tabular-nums"
+            />
+            <span className="text-xs text-muted">min</span>
+          </span>
+        </label>
+      ) : hasBoth ? (
+        <button
+          type="button"
+          onClick={() => setShowBreak(true)}
+          className="mt-2 text-xs text-muted underline-offset-2 transition hover:text-ink hover:underline"
+        >
+          Add unpaid break…
+        </button>
+      ) : null}
     </div>
   );
 });

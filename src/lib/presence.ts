@@ -4,7 +4,7 @@
 // here, in one tested, tunable place.
 
 import type { DayEntry, PresenceDay } from './schema';
-import { nowHHMM, roundToNearest5 } from './dates';
+import { nowHHMM, roundToNearest5, roundToNearest15 } from './dates';
 
 /** A WiFi dropout shorter than this is "still here", not a departure. */
 export const GAP_MS = 30 * 60 * 1000;
@@ -15,8 +15,11 @@ export const DIFF_MIN = 15;
 
 export interface Suggestion {
   patch: { start?: string; end?: string };
+  /** Fine-grained detection for display (5-min precision). */
   detectedStart: string;
   detectedEnd?: string;
+  /** True when the quarter-hour applied values differ from the display. */
+  rounded: boolean;
   sensorStale: boolean;
   /** Stable identity for dismissal — changes iff the suggestion changes. */
   key: string;
@@ -41,25 +44,30 @@ export function suggestionFor(
   if (!presence || presence.firstSeenAt <= 0) return null;
 
   const sensorStale = presence.updatedAt > 0 && now - presence.updatedAt > STALE_MS;
-  const detectedStart = roundToNearest5(hhmmFromEpoch(presence.firstSeenAt));
+
+  // Display shows fine-grained detection; APPLIED values round to the
+  // nearest quarter hour (the household pays by 15-minute marks).
+  const rawStart = hhmmFromEpoch(presence.firstSeenAt);
+  const detectedStart = roundToNearest5(rawStart);
+  const applyStart = roundToNearest15(rawStart);
 
   // A frozen lastSeenAt on a dead sensor looks exactly like a departure —
   // so departure detection requires a live heartbeat.
   const departed =
     !sensorStale && presence.lastSeenAt > 0 && now - presence.lastSeenAt > GAP_MS;
-  const detectedEnd = departed
-    ? roundToNearest5(hhmmFromEpoch(presence.lastSeenAt))
-    : undefined;
+  const rawEnd = departed ? hhmmFromEpoch(presence.lastSeenAt) : undefined;
+  const detectedEnd = rawEnd ? roundToNearest5(rawEnd) : undefined;
+  const applyEnd = rawEnd ? roundToNearest15(rawEnd) : undefined;
 
   const start = entry?.start ?? '';
   const end = entry?.end ?? '';
 
   const patch: { start?: string; end?: string } = {};
-  if (!start || absDiffMinutes(start, detectedStart) > DIFF_MIN) {
-    patch.start = detectedStart;
+  if (!start || absDiffMinutes(start, applyStart) > DIFF_MIN) {
+    patch.start = applyStart;
   }
-  if (detectedEnd && (!end || absDiffMinutes(end, detectedEnd) > DIFF_MIN)) {
-    patch.end = detectedEnd;
+  if (applyEnd && (!end || absDiffMinutes(end, applyEnd) > DIFF_MIN)) {
+    patch.end = applyEnd;
   }
   if (!patch.start && !patch.end) return null;
 
@@ -67,6 +75,9 @@ export function suggestionFor(
     patch,
     detectedStart,
     detectedEnd,
+    rounded:
+      (patch.start !== undefined && patch.start !== detectedStart) ||
+      (patch.end !== undefined && patch.end !== detectedEnd),
     sensorStale,
     key: `${dateKey}|${patch.start ?? ''}|${patch.end ?? ''}`,
   };

@@ -18,6 +18,7 @@ import {
 import { db } from '../lib/firebase';
 import { patchStore, readStore, useStore } from './useStore';
 import {
+  dayMinutes,
   normalizeArchived,
   normalizeCounts,
   normalizeHistory,
@@ -38,6 +39,7 @@ import {
   formatFull,
   minutesBetween,
   nowHHMM,
+  roundToNearest15,
   toLocalDateKey,
   weekLabel,
 } from '../lib/dates';
@@ -224,7 +226,7 @@ function writing<T>(p: Promise<T>): Promise<T> {
 
 export function setDayField(
   dateKey: string,
-  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel'>>,
+  patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>>,
 ): Promise<void> {
   const fullPatch = withAutoFuel(readStore().week.days[dateKey], patch);
   return writing(
@@ -232,10 +234,11 @@ export function setDayField(
   );
 }
 
-/** One-tap punch for today; stamps the exact current minute. */
+/** One-tap punch for today, rounded to the nearest 15 minutes (the
+ * household pays by quarter-hour marks). */
 export function punchToday(kind: 'start' | 'end'): Promise<void> {
   const todayKey = toLocalDateKey(new Date());
-  const time = nowHHMM();
+  const time = roundToNearest15(nowHHMM());
   if (kind === 'end') {
     const day = readStore().week.days[todayKey];
     if (day?.start && minutesBetween(day.start, time) === 0) {
@@ -318,7 +321,7 @@ export function computeSavePay(): SavePayComputation {
   let minutes = 0;
   let fuelDays = 0;
   for (const day of Object.values(week.days)) {
-    minutes += minutesBetween(day.start, day.end);
+    minutes += dayMinutes(day);
     if (day.fuel) fuelDays++;
   }
   const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
@@ -400,7 +403,7 @@ export function computeArchivedPay(weekStart: string): SavePayComputation | null
   let minutes = 0;
   let fuelDays = 0;
   for (const day of Object.values(archived.days)) {
-    minutes += minutesBetween(day.start, day.end);
+    minutes += dayMinutes(day);
     if (day.fuel) fuelDays++;
   }
   const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);

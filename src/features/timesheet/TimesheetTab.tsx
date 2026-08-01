@@ -3,12 +3,12 @@ import { useStore } from '../../store/useStore';
 import {
   DAY_NAMES,
   WEEKDAY_INDICES,
-  minutesBetween,
   toLocalDateKey,
   weekDayKey,
   weekLabel,
 } from '../../lib/dates';
 import { formatCents, parseDollarInput, centsToDollars } from '../../lib/money';
+import { dayMinutes } from '../../lib/schema';
 import {
   clearCarryover,
   commitArchivedPay,
@@ -58,7 +58,7 @@ export function TimesheetTab() {
     let minutes = 0;
     let fuelDays = 0;
     for (const d of Object.values(week.days)) {
-      minutes += minutesBetween(d.start, d.end);
+      minutes += dayMinutes(d);
       if (d.fuel) fuelDays++;
     }
     const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);

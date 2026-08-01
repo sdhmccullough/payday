@@ -96,6 +96,20 @@ export function roundToNearest5(hhmm: string): string {
   );
 }
 
+/** Round "HH:MM" to the nearest 15 minutes (pay-period convention), clamped
+ * inside the same day. Applied when times are ENTERED (punch, suggestion
+ * apply); displayed detections stay at finer precision. */
+export function roundToNearest15(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  let total = Math.round((h * 60 + m) / 15) * 15;
+  if (total >= 24 * 60) total = 24 * 60 - 15;
+  return (
+    String(Math.floor(total / 60)).padStart(2, '0') +
+    ':' +
+    String(total % 60).padStart(2, '0')
+  );
+}
+
 /** "HH:MM" → "7:58 AM" for display. */
 export function formatHHMM12(hhmm: string): string {
   if (!hhmm) return '';

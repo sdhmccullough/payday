@@ -6,6 +6,7 @@ import {
   minutesBetween,
   nowHHMM,
   parseDateKey,
+  roundToNearest15,
   roundToNearest5,
   toLocalDateKey,
   weekDayKey,
@@ -91,6 +92,15 @@ describe('nowHHMM / roundToNearest5 / formatHHMM12', () => {
   it('clamps within the same day at midnight', () => {
     expect(roundToNearest5('23:59')).toBe('23:55');
     expect(roundToNearest5('23:57')).toBe('23:55');
+  });
+
+  it('rounds to nearest quarter hour for entered times', () => {
+    expect(roundToNearest15('07:52')).toBe('07:45');
+    expect(roundToNearest15('07:53')).toBe('08:00');
+    expect(roundToNearest15('08:07')).toBe('08:00');
+    expect(roundToNearest15('08:08')).toBe('08:15');
+    expect(roundToNearest15('16:30')).toBe('16:30');
+    expect(roundToNearest15('23:59')).toBe('23:45'); // same-day clamp
   });
 
   it('formats 12-hour display times', () => {

@@ -41,7 +41,10 @@ describe('suggestionFor', () => {
   it('suggests an end only after the departure gap', () => {
     const s = suggestionFor(DATE, presence(7, 57, 16, 30), undefined, NOW);
     expect(NOW - at(16, 30)).toBeGreaterThan(GAP_MS);
-    expect(s?.patch).toEqual({ start: '07:55', end: '16:30' });
+    // Display keeps 5-min precision; applied values round to quarter hours.
+    expect(s?.detectedStart).toBe('07:55');
+    expect(s?.patch).toEqual({ start: '08:00', end: '16:30' });
+    expect(s?.rounded).toBe(true);
   });
 
   it('a stale sensor never produces a departure', () => {
@@ -73,7 +76,7 @@ describe('suggestionFor', () => {
       { start: '09:00', end: '16:25', fuel: true },
       NOW,
     );
-    expect(s?.patch).toEqual({ start: '07:55' }); // end within threshold, kept
+    expect(s?.patch).toEqual({ start: '08:00' }); // end within threshold, kept
   });
 
   it('returns null without a firstSeenAt', () => {

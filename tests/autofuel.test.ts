@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { withAutoFuel, normalizeDay, type DayEntry } from '../src/lib/schema';
+import {
+  dayMinutes,
+  normalizeDay,
+  withAutoFuel,
+  type DayEntry,
+} from '../src/lib/schema';
 
 const empty: DayEntry | undefined = undefined;
 const blank: DayEntry = { start: '', end: '', fuel: false };
@@ -46,5 +51,38 @@ describe('withAutoFuel', () => {
     const day = normalizeDay({ ...blank, ...patch });
     expect(day.fuel).toBe(true);
     expect(day.start).toBe('08:02');
+  });
+});
+
+describe('dayMinutes', () => {
+  const day = (start: string, end: string, breakMinutes?: number): DayEntry => ({
+    start,
+    end,
+    fuel: false,
+    breakMinutes,
+  });
+
+  it('is the span when there is no break', () => {
+    expect(dayMinutes(day('08:00', '17:00'))).toBe(540);
+    expect(dayMinutes(undefined)).toBe(0);
+  });
+
+  it('subtracts an unpaid break', () => {
+    expect(dayMinutes(day('08:00', '17:00', 120))).toBe(420);
+  });
+
+  it('never goes negative when the break exceeds the span', () => {
+    expect(dayMinutes(day('08:00', '09:00', 120))).toBe(0);
+  });
+
+  it('ignores breaks on invalid or empty spans', () => {
+    expect(dayMinutes(day('17:00', '08:00', 60))).toBe(0);
+    expect(dayMinutes(day('', '', 60))).toBe(0);
+  });
+
+  it('normalizeDay keeps and cleans breakMinutes', () => {
+    expect(normalizeDay({ start: '08:00', end: '17:00', breakMinutes: 120.4 }).breakMinutes).toBe(120);
+    expect(normalizeDay({ start: '08:00', end: '17:00', breakMinutes: -5 }).breakMinutes).toBeUndefined();
+    expect(normalizeDay({ start: '08:00', end: '17:00' }).breakMinutes).toBeUndefined();
   });
 });
