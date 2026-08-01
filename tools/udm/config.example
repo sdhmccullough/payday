@@ -1,0 +1,29 @@
+# PayDay presence poller configuration.
+# Copy to /data/payday/config on the UDM and edit. See SETUP-UNIFI.md.
+
+# The phone's MAC address AS SHOWN IN THE UNIFI CLIENT LIST (lowercase or
+# uppercase both fine — matching is case-insensitive).
+NANNY_MAC="aa:bb:cc:dd:ee:ff"
+
+# PayDay household id (Settings > it's the household owner's UID; ask Claude
+# or copy from the Firebase console under /userHouseholds).
+HID="replace-me"
+
+# UniFi site UUID — find it once with:
+#   curl -sk -H "X-API-KEY: $UNIFI_KEY" https://127.0.0.1/proxy/network/integration/v1/sites
+SITE_ID="replace-me"
+
+# UniFi API key (UniFi Network > Settings > Control Plane > Integrations).
+UNIFI_KEY="replace-me"
+
+# The SECOND Firebase API key — the one restricted to Identity Toolkit +
+# Token Service APIs (NOT the referrer-restricted web key).
+FB_KEY="replace-me"
+
+# ---- optional tuning (defaults shown) ----
+#DB="https://payday-daf05-default-rtdb.firebaseio.com"
+#CONSOLE_URL="https://127.0.0.1"
+#POLL_SECS=180
+#QUIET_START=0500
+#QUIET_END=2300
+#ABSENT_RESET_SECS=14400
