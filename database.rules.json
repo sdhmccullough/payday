@@ -47,7 +47,8 @@
           ".read": "auth != null && root.child('households/' + $hid + '/members/' + auth.uid).exists()",
           ".write": "auth != null && root.child('households/' + $hid + '/members/' + auth.uid).exists()",
           "hourlyRateCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "fuelRateCents": { ".validate": "newData.isNumber() && newData.val() >= 0" }
+          "fuelRateCents": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "paydayDay": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6" }
         },
         "week": {
           ".read": "auth != null && root.child('households/' + $hid + '/members/' + auth.uid).exists()",

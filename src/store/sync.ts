@@ -237,6 +237,10 @@ export function setRates(hourlyRateCents: Cents, fuelRateCents: Cents): Promise<
   return writing(update(hhRef('settings'), { hourlyRateCents, fuelRateCents }));
 }
 
+export function setPaydayDay(paydayDay: number): Promise<void> {
+  return writing(update(hhRef('settings'), { paydayDay }));
+}
+
 export function setBonus(bonusCents: Cents): Promise<void> {
   return writing(update(hhRef('week'), { bonusCents }));
 }
@@ -348,6 +352,91 @@ export function commitSavePay(calc: SavePayComputation): Promise<void> {
   updates['week/carryoverCents'] = calc.shortfallCents;
 
   return writing(update(hhRef(), updates));
+}
+
+// ---- archived (unpaid) weeks ----------------------------------------------
+
+/** Same shape as computeSavePay, but against an archived week. Current
+ * carryover is deliberately excluded — it stays attached to the live week. */
+export function computeArchivedPay(weekStart: string): SavePayComputation | null {
+  const { archivedWeeks, settings, cashCounts } = readStore();
+  const archived = archivedWeeks[weekStart];
+  if (!archived) return null;
+  let minutes = 0;
+  let fuelDays = 0;
+  for (const day of Object.values(archived.days)) {
+    minutes += minutesBetween(day.start, day.end);
+    if (day.fuel) fuelDays++;
+  }
+  const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
+  const fuelCents = fuelDays * settings.fuelRateCents;
+  const totalCents = wagesCents + fuelCents + archived.bonusCents;
+  const { breakdown, paidCents, shortfallCents } = billBreakdown(totalCents, cashCounts);
+  return {
+    minutes,
+    wagesCents,
+    fuelCents,
+    bonusCents: archived.bonusCents,
+    carryoverCents: 0,
+    totalCents,
+    paidCents,
+    shortfallCents,
+    breakdown,
+  };
+}
+
+/** Pay an archived week: history + cash txn + bill counts + archive removal
+ * in one update; any shortfall folds into the live week's carryover. */
+export function commitArchivedPay(
+  weekStart: string,
+  calc: SavePayComputation,
+): Promise<void> {
+  const { cashCounts, week } = readStore();
+  const label = weekLabel(weekStart);
+  const now = Date.now();
+  const historyKey = push(child(ref(db), 'x')).key as string;
+  const txnKey = push(child(ref(db), 'x')).key as string;
+
+  const updates: Record<string, unknown> = {};
+  updates[`history/${historyKey}`] = {
+    weekStart,
+    minutes: calc.minutes,
+    wagesCents: calc.wagesCents,
+    fuelCents: calc.fuelCents,
+    bonusCents: calc.bonusCents,
+    carryoverCents: 0,
+    totalCents: calc.totalCents,
+    amountPaidCents: calc.paidCents,
+    shortfallCents: calc.shortfallCents,
+    breakdown: Object.keys(calc.breakdown).length ? calc.breakdown : null,
+    paidDateLabel: formatFull(new Date(now)),
+    paidAt: serverTimestamp(),
+    by: uid() ?? null,
+  };
+  if (calc.paidCents > 0) {
+    updates[`cashTransactions/${txnKey}`] = {
+      type: 'withdrawal',
+      label: `Payment: ${label} (late)`,
+      amountCents: calc.paidCents,
+      breakdown: Object.keys(calc.breakdown).length ? calc.breakdown : null,
+      dateLabel: formatFull(new Date(now)),
+      at: serverTimestamp(),
+      by: uid() ?? null,
+    };
+  }
+  for (const [bill, used] of Object.entries(calc.breakdown)) {
+    updates[`cash/counts/${bill}`] = Math.max(0, (cashCounts[bill] ?? 0) - used);
+  }
+  updates[`archivedWeeks/${weekStart}`] = null;
+  if (calc.shortfallCents > 0) {
+    updates['week/carryoverCents'] = week.carryoverCents + calc.shortfallCents;
+  }
+  return writing(update(hhRef(), updates));
+}
+
+/** Discard an archived week without paying it. */
+export function discardArchivedWeek(weekStart: string): Promise<void> {
+  return writing(remove(hhRef(`archivedWeeks/${weekStart}`)));
 }
 
 // ---- week rollover --------------------------------------------------------

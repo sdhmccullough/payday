@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { useStore, type Tab } from './store/useStore';
 import { redeemPendingInvite } from './store/auth';
+import { computeSavePay } from './store/sync';
+import { formatCents } from './lib/money';
+import { toLocalDateKey } from './lib/dates';
+import { clearBadge, maybeNotifyPayday } from './lib/notify';
 import { toast, toastError } from './components/ui/Toast';
 import { ConfirmDialog } from './components/ui/Dialog';
 import { SignInScreen } from './features/auth/SignInScreen';
@@ -60,8 +64,25 @@ function AppShell() {
   const tab = useStore((s) => s.tab);
   const setTab = useStore((s) => s.setTab);
   const week = useStore((s) => s.week);
+  const settings = useStore((s) => s.settings);
   const migrating = useStore((s) => s.migrating);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Device-local payday reminder: at most once per day, only while open.
+  useEffect(() => {
+    const now = new Date();
+    const pos = (d: number) => (d + 1) % 7; // Sat-anchored week position
+    if (pos(now.getDay()) < pos(settings.paydayDay)) return;
+    const calc = computeSavePay();
+    if (calc.totalCents <= 0) {
+      clearBadge();
+      return;
+    }
+    maybeNotifyPayday(
+      `It's payday — ${formatCents(calc.totalCents)} due.`,
+      toLocalDateKey(now),
+    );
+  }, [week, settings]);
 
   return (
     <Tabs.Root value={tab} onValueChange={(v) => setTab(v as Tab)}>

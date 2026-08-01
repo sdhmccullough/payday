@@ -9,9 +9,14 @@ import {
 import { applyTheme, getTheme, type ThemeChoice } from '../../lib/theme';
 import { ConfirmDialog, Dialog } from '../../components/ui/Dialog';
 import { Button, IconButton } from '../../components/ui/Button';
+import { Switch } from '../../components/ui/Switch';
 import { toast, toastError } from '../../components/ui/Toast';
 import { TrashIcon } from '../../components/icons';
 import { debounce } from '../../lib/debounce';
+import { setPaydayDay } from '../../store/sync';
+import { isNotifyEnabled, setNotifyEnabled } from '../../lib/notify';
+
+const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const debouncedRates = debounce((hourly: number, fuel: number) => {
   setRates(hourly, fuel).catch(() => toastError('Rates not synced'));
@@ -66,6 +71,7 @@ export function SettingsDialog({
   const [removeUid, setRemoveUid] = useState<string | null>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeChoice>(getTheme());
+  const [notify, setNotify] = useState(isNotifyEnabled());
 
   const isOwner = user !== null && ownerUid === user.uid;
 
@@ -111,6 +117,50 @@ export function SettingsDialog({
             cents={settings.fuelRateCents}
             onCents={(c) => debouncedRates(settings.hourlyRateCents, c)}
           />
+          <label
+            htmlFor="payday-day"
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <span className="text-muted">Payday</span>
+            <select
+              id="payday-day"
+              value={settings.paydayDay}
+              onChange={(e) =>
+                setPaydayDay(Number(e.target.value)).catch(() =>
+                  toastError('Not synced'),
+                )
+              }
+              className="min-h-11 rounded-(--radius-control) border border-line bg-surface-2 px-2 text-sm"
+            >
+              {DAY_LABELS.map((d, i) => (
+                <option key={d} value={i}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted">
+              Payday reminder
+              <span className="block text-xs">
+                Notifies on this device when the app opens on payday
+              </span>
+            </span>
+            <Switch
+              checked={notify}
+              onCheckedChange={(on) => {
+                void setNotifyEnabled(on).then((granted) => {
+                  setNotify(granted);
+                  if (on && !granted)
+                    toastError(
+                      'Notifications blocked',
+                      'Allow notifications for this site in your browser settings.',
+                    );
+                });
+              }}
+              label="Payday reminder notifications"
+            />
+          </div>
         </section>
 
         <section aria-label="Household" className="space-y-3">

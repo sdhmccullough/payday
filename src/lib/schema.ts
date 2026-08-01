@@ -28,6 +28,8 @@ export interface WeekState {
 export interface Settings {
   hourlyRateCents: Cents;
   fuelRateCents: Cents;
+  /** Day pay is due, JS getDay() numbering (0=Sun … 6=Sat). Default Friday. */
+  paydayDay: number;
 }
 
 export interface CashTxn {
@@ -76,6 +78,7 @@ export interface PriorPayment {
 export const DEFAULT_SETTINGS: Settings = {
   hourlyRateCents: 2200,
   fuelRateCents: 1000,
+  paydayDay: 5,
 };
 
 // ---- normalizers ----------------------------------------------------------
@@ -118,9 +121,11 @@ export function normalizeWeek(v: unknown): WeekState {
 
 export function normalizeSettings(v: unknown): Settings {
   const o = rec(v);
+  const day = num(o.paydayDay, DEFAULT_SETTINGS.paydayDay);
   return {
     hourlyRateCents: num(o.hourlyRateCents, DEFAULT_SETTINGS.hourlyRateCents),
     fuelRateCents: num(o.fuelRateCents, DEFAULT_SETTINGS.fuelRateCents),
+    paydayDay: day >= 0 && day <= 6 ? Math.round(day) : DEFAULT_SETTINGS.paydayDay,
   };
 }
 
