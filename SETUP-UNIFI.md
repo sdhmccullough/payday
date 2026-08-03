@@ -31,17 +31,48 @@ reading or writing anything else (pay, history, members).
 4. **Grant the sensor in PayDay**: open the app → Settings → **Presence
    sensor** → paste the sensor's UID → Grant.
 
-## 2. UniFi side (~5 minutes)
+## 2. UniFi side (~10 minutes)
 
-1. **Enable SSH on the console**: UniFi OS → Console Settings → Advanced →
-   SSH → enable, set a password.
-2. **Create a UniFi API key**: UniFi Network → Settings → **Control Plane →
-   Integrations** → Create API Key. Copy it.
-3. **Find the site UUID** (from your PC or SSH'd into the UDM):
-   ```
-   curl -sk -H "X-API-KEY: YOUR_UNIFI_KEY" https://<udm-ip>/proxy/network/integration/v1/sites
-   ```
-   Copy the `id` UUID from the response.
+**Find the UDM's IP first** — it's almost always your default gateway. On a
+PC on your home network: `ipconfig` → "Default Gateway" (typically
+`192.168.1.1`). Everything below uses `<udm-ip>` for that address. Browsing
+to `https://<udm-ip>` shows a certificate warning — expected (self-signed);
+click Advanced → Proceed.
+
+### 2a. Enable SSH on the console
+
+This lives in the **UniFi OS (console) settings**, NOT inside the Network
+application — easy to confuse with Network's "Device SSH Authentication,"
+which only covers APs and switches, not the console itself.
+
+1. Open `https://<udm-ip>` (or unifi.ui.com → your console) and sign in.
+2. From the UniFi OS home screen (the one listing Network/Protect apps),
+   click the **gear / Console Settings** (bottom-left on most versions).
+3. Scroll to **Advanced** → toggle **SSH** on → **Change Password** to set
+   an SSH password. The username is always `root`.
+4. Sanity check from your PC: `ssh root@<udm-ip>` → accept the fingerprint
+   → enter the SSH password → you should get a Linux shell. Type `exit`.
+
+### 2b. Create the UniFi API key
+
+1. Open the **Network** application (from the console home screen).
+2. **Settings (gear) → Control Plane → Integrations** tab.
+   (If you don't see "Control Plane," update the Network app — it needs a
+   recent 9.x version; older versions had no official API keys.)
+3. **Create API Key**, name it `payday-presence`, and **copy it immediately**
+   — it's shown only once. This becomes `UNIFI_KEY` in the config.
+
+### 2c. Find the site UUID
+
+From PowerShell on your PC (same network), with your key pasted in:
+
+```
+curl.exe -sk -H "X-API-KEY: PASTE_YOUR_KEY_HERE" https://<udm-ip>/proxy/network/integration/v1/sites
+```
+
+The JSON response contains `"id":"xxxxxxxx-xxxx-...."` — that UUID is
+`SITE_ID` in the config. (There's typically exactly one site, named
+"Default".)
 
 ## 3. The phone's MAC address
 
@@ -59,51 +90,77 @@ reading or writing anything else (pay, history, members).
 
 ## 4. Install on the UDM
 
-From this repo, copy the two scripts and the config over (replace `<udm-ip>`):
+From PowerShell, **in the repo folder** (`cd` to it first), copy all three
+files over — you'll be asked for the SSH password each time unless you set
+up keys:
 
-```bash
-scp tools/udm/payday-presence.sh tools/udm/config.example root@<udm-ip>:/tmp/
+```
+scp tools/udm/payday-presence.sh tools/udm/config.example tools/udm/30-payday-presence.sh root@<udm-ip>:/tmp/
 ```
 
-Then SSH in (`ssh root@<udm-ip>`) and:
+Then `ssh root@<udm-ip>` and run, line by line:
 
 ```bash
 mkdir -p /data/payday
 mv /tmp/payday-presence.sh /data/payday/
 mv /tmp/config.example /data/payday/config
 chmod 700 /data/payday/payday-presence.sh
-vi /data/payday/config        # fill in MAC, HID, SITE_ID, UNIFI_KEY, FB_KEY
-sh /data/payday/payday-presence.sh login   # sensor email + password, one time
+vi /data/payday/config
 ```
 
-`login` prints the sensor UID again — confirm it matches what you granted in
-the app. Only the refresh token is stored (mode 600); the password is not.
+In `vi`: arrow to a value, press `i` to edit, replace the placeholder;
+`Esc` then `:wq` + Enter saves and quits. Fill in: `NANNY_MAC` (step 3),
+`HID` (your household id), `SITE_ID` (step 2c), `UNIFI_KEY` (step 2b),
+`FB_KEY` (the udm-sensor key from step 1.3).
 
-Test one cycle while her phone is on the WiFi:
+Sign the sensor in — one time; it prompts for the sensor account email and
+password, stores only a refresh token, and prints the sensor UID (should
+match what you granted in the app):
+
+```bash
+sh /data/payday/payday-presence.sh login
+```
+
+Test one full cycle while her phone (or any phone whose MAC you temporarily
+put in the config) is on the WiFi:
 
 ```bash
 sh -x /data/payday/payday-presence.sh poll
+echo $?    # 0 = clean
+tail -5 /data/payday/presence.log
 ```
 
-Then check the app: PayDay → Timesheet → today's card should show a
-"Detected arrival …" chip within a minute (and the punch banner shows
-"Sensor last reported …").
+Then check the app: Timesheet → today's card shows a "Detected arrival …"
+chip within a minute, and the punch banner shows "Sensor last reported …".
 
 ## 5. Start at boot (survives most firmware updates)
 
-Install the community `udm-boot` package once (persists scripts in
-`/data/on_boot.d`): follow
-[unifios-utilities on-boot-script](https://github.com/unifi-utilities/unifios-utilities/tree/main/on-boot-script).
-Then:
+The community-standard boot persistence for UniFi OS 4.x is
+[unifi-utilities/unifi-common](https://github.com/unifi-utilities/unifi-common)
+— it installs a systemd unit that runs everything in `/data/on_boot.d/` at
+startup. Its installer is a pipe-to-shell one-liner; since this runs as root
+on your gateway, the careful version is download → skim → run:
 
 ```bash
-cp /tmp/30-payday-presence.sh /data/on_boot.d/   # or scp it like the others
-chmod +x /data/on_boot.d/30-payday-presence.sh
-sh /data/on_boot.d/30-payday-presence.sh          # start it now without rebooting
+curl -fsL -o /tmp/remote_install.sh "https://raw.githubusercontent.com/unifi-utilities/unifi-common/HEAD/remote_install.sh"
+less /tmp/remote_install.sh      # q to quit when satisfied
+/bin/bash /tmp/remote_install.sh
 ```
 
-Reboot test: restart the UDM, wait five minutes, and confirm the "Sensor
-last reported" time in the app is fresh.
+Then install and start the shim:
+
+```bash
+mkdir -p /data/on_boot.d
+mv /tmp/30-payday-presence.sh /data/on_boot.d/
+chmod +x /data/on_boot.d/30-payday-presence.sh
+sh /data/on_boot.d/30-payday-presence.sh     # start now, no reboot needed
+```
+
+Confirm it's running: `ps | grep payday` should show the `run` loop, and the
+app's "Sensor last reported" should refresh within ~3 minutes.
+
+**Reboot test** (do this once): restart the UDM (Console Settings →
+Restart), wait five minutes, confirm "Sensor last reported" is fresh again.
 
 ## 6. How it behaves
 
