@@ -127,3 +127,25 @@ export function minutesBetween(start: string, end: string): number {
   const diff = eh * 60 + em - (sh * 60 + sm);
   return diff > 0 ? diff : 0;
 }
+
+const MONTH_ABBR = [
+  'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+  'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+] as const;
+
+/** Inverse of formatFull: "Mar 6, 2026" → local-midnight epoch ms, or null
+ * when the text isn't a date the app wrote (v1 rows carry free-form labels
+ * like "Last Friday"). Ledger rows migrated from v1 have no epoch timestamp,
+ * so their display label is the only date they can be ordered by. */
+export function parseFullDateLabel(label: string): number | null {
+  const m = /^\s*([A-Za-z]{3,})\.?\s+(\d{1,2}),\s*(\d{4})\s*$/.exec(label);
+  if (!m) return null;
+  const month = MONTH_ABBR.indexOf(
+    m[1].slice(0, 3).toLowerCase() as (typeof MONTH_ABBR)[number],
+  );
+  if (month < 0) return null;
+  const day = Number(m[2]);
+  if (day < 1 || day > 31) return null;
+  const d = new Date(Number(m[3]), month, day);
+  return d.getMonth() === month && d.getDate() === day ? d.getTime() : null;
+}

@@ -15,6 +15,7 @@ import { Button, IconButton } from '../../components/ui/Button';
 import { ConfirmDialog, Dialog } from '../../components/ui/Dialog';
 import { toast, toastError } from '../../components/ui/Toast';
 import { MinusIcon, PlusIcon, TrashIcon } from '../../components/icons';
+import { orderCashTxns } from '../../lib/ordering';
 
 function Stepper({
   label,
@@ -135,13 +136,7 @@ export function CashTab() {
 
   const totalCents = cashTotalCents(cashCounts);
 
-  const ordered = useMemo(
-    () =>
-      Object.entries(txns).sort(
-        ([, a], [, b]) => (b.at ?? 0) - (a.at ?? 0),
-      ),
-    [txns],
-  );
+  const ordered = useMemo(() => orderCashTxns(txns), [txns]);
 
   return (
     <section
