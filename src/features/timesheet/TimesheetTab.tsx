@@ -8,7 +8,7 @@ import {
   weekLabel,
 } from '../../lib/dates';
 import { formatCents, parseDollarInput, centsToDollars } from '../../lib/money';
-import { dayMinutes } from '../../lib/schema';
+import { weekTotals } from '../../lib/pay';
 import {
   clearCarryover,
   commitArchivedPay,
@@ -55,20 +55,11 @@ export function TimesheetTab() {
   const [archivedPayOpen, setArchivedPayOpen] = useState(false);
 
   const totals = useMemo(() => {
-    let minutes = 0;
-    let fuelDays = 0;
-    for (const d of Object.values(week.days)) {
-      minutes += dayMinutes(d);
-      if (d.fuel) fuelDays++;
-    }
-    const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
-    const fuelCents = fuelDays * settings.fuelRateCents;
+    const t = weekTotals(week.days, settings);
     return {
-      minutes,
-      wagesCents,
-      fuelCents,
+      ...t,
       totalCents:
-        wagesCents + fuelCents + week.bonusCents + week.carryoverCents,
+        t.wagesCents + t.fuelCents + week.bonusCents + week.carryoverCents,
     };
   }, [week, settings]);
 

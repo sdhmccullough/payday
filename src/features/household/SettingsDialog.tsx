@@ -19,8 +19,13 @@ import { needsIosInstallHint, promptInstall } from '../../lib/install';
 
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const debouncedRates = debounce((hourly: number, fuel: number) => {
-  setRates(hourly, fuel).catch(() => toastError('Rates not synced'));
+// One debouncer per field: a shared one would carry the *other* field's
+// pre-edit value along and undo an edit made moments earlier.
+const debouncedHourly = debounce((hourlyRateCents: number) => {
+  setRates({ hourlyRateCents }).catch(() => toastError('Rates not synced'));
+}, 400);
+const debouncedFuel = debounce((fuelRateCents: number) => {
+  setRates({ fuelRateCents }).catch(() => toastError('Rates not synced'));
 }, 400);
 
 function RateField({
@@ -113,13 +118,13 @@ export function SettingsDialog({
             id="hourly-rate"
             label="Hourly rate"
             cents={settings.hourlyRateCents}
-            onCents={(c) => debouncedRates(c, settings.fuelRateCents)}
+            onCents={(c) => debouncedHourly(c)}
           />
           <RateField
             id="fuel-rate"
             label="Fuel per day"
             cents={settings.fuelRateCents}
-            onCents={(c) => debouncedRates(settings.hourlyRateCents, c)}
+            onCents={(c) => debouncedFuel(c)}
           />
           <label
             htmlFor="payday-day"

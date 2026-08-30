@@ -12,13 +12,13 @@ import {
   push,
   get,
   child,
+  increment,
   type DatabaseReference,
   type Unsubscribe,
 } from 'firebase/database';
 import { db } from '../lib/firebase';
 import { patchStore, readStore, useStore } from './useStore';
 import {
-  dayMinutes,
   normalizeArchived,
   normalizeCounts,
   normalizeHistory,
@@ -33,7 +33,14 @@ import {
   type DayEntry,
   type HistoryEntry,
 } from '../lib/schema';
-import { billBreakdown, cashTotalCents, type Cents } from '../lib/money';
+import {
+  cashTotalCents,
+  missingBill,
+  type BillBreakdown,
+  type BillCounts,
+  type Cents,
+} from '../lib/money';
+import { computePay, type PayComputation } from '../lib/pay';
 import {
   currentWeekStart,
   formatFull,
@@ -200,6 +207,21 @@ export async function attachHousehold(hid: string): Promise<void> {
     }),
   );
 
+  // The week node only fires on data changes, so an app left open across the
+  // Saturday boundary would keep showing (and writing to) last week. Poll the
+  // clock as well, and re-check whenever the tab comes back to the front.
+  const rolloverTimer = setInterval(() => void reconcileWeekIfStale(), 5 * 60 * 1000);
+  subscriptions.push(() => clearInterval(rolloverTimer));
+  if (typeof document !== 'undefined') {
+    const onVisible = () => {
+      if (!document.hidden) void reconcileWeekIfStale();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    subscriptions.push(() =>
+      document.removeEventListener('visibilitychange', onVisible),
+    );
+  }
+
   // Mirror every store change into the offline cache.
   subscriptions.push(useStore.subscribe(schedulePersist));
 }
@@ -238,7 +260,13 @@ export function setDayField(
 
 /** One-tap punch for today, rounded to the nearest 15 minutes (the
  * household pays by quarter-hour marks). */
-export function punchToday(kind: 'start' | 'end'): Promise<void> {
+export async function punchToday(kind: 'start' | 'end'): Promise<void> {
+  // A punch is stamped with today's date, so it must not land in a week that
+  // hasn't rolled over yet (an app left open across Friday night) — that
+  // would file it under the previous week and archive it out of sight.
+  if (readStore().week.weekStart !== currentWeekStart()) {
+    await reconcileWeekIfStale();
+  }
   const todayKey = toLocalDateKey(new Date());
   const time = roundToNearest15(nowHHMM());
   if (kind === 'end') {
@@ -273,8 +301,12 @@ export function resetWeekDays(): Promise<void> {
   return writing(remove(hhRef('week/days')));
 }
 
-export function setRates(hourlyRateCents: Cents, fuelRateCents: Cents): Promise<void> {
-  return writing(update(hhRef('settings'), { hourlyRateCents, fuelRateCents }));
+/** Patch only the rate fields that changed — writing both would let a
+ * debounced edit of one field overwrite an in-flight edit of the other. */
+export function setRates(
+  patch: Partial<{ hourlyRateCents: Cents; fuelRateCents: Cents }>,
+): Promise<void> {
+  return writing(update(hhRef('settings'), patch));
 }
 
 export function setPaydayDay(paydayDay: number): Promise<void> {
@@ -305,42 +337,43 @@ export function deleteHistoryEntry(id: string): Promise<void> {
   return writing(remove(hhRef(`history/${id}`)));
 }
 
-export interface SavePayComputation {
-  minutes: number;
-  wagesCents: Cents;
-  fuelCents: Cents;
-  bonusCents: Cents;
-  carryoverCents: Cents;
-  totalCents: Cents;
-  paidCents: Cents;
-  shortfallCents: Cents;
-  breakdown: Record<string, number>;
-}
+export type SavePayComputation = PayComputation;
 
-/** Pure computation of what Save & Pay would do against current store state. */
+/** What Save & Pay would do against current store state. */
 export function computeSavePay(): SavePayComputation {
   const { week, settings, cashCounts } = readStore();
-  let minutes = 0;
-  let fuelDays = 0;
-  for (const day of Object.values(week.days)) {
-    minutes += dayMinutes(day);
-    if (day.fuel) fuelDays++;
+  return computePay(
+    week.days,
+    settings,
+    { bonusCents: week.bonusCents, carryoverCents: week.carryoverCents },
+    cashCounts,
+  );
+}
+
+/** The drawer is read when the dialog opens but spent when it's confirmed —
+ * another member (or another tab) can spend bills in between. Paying anyway
+ * would clamp the counts at zero and record a payment the drawer never made,
+ * so a changed drawer aborts with a message instead. */
+function assertDrawerCovers(counts: BillCounts, breakdown: BillBreakdown): void {
+  const bill = missingBill(counts, breakdown);
+  if (bill !== null) {
+    throw new Error(
+      `The cash drawer changed (not enough $${bill} bills). Reopen Save & Pay to recalculate.`,
+    );
   }
-  const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
-  const fuelCents = fuelDays * settings.fuelRateCents;
-  const totalCents = wagesCents + fuelCents + week.bonusCents + week.carryoverCents;
-  const { breakdown, paidCents, shortfallCents } = billBreakdown(totalCents, cashCounts);
-  return {
-    minutes,
-    wagesCents,
-    fuelCents,
-    bonusCents: week.bonusCents,
-    carryoverCents: week.carryoverCents,
-    totalCents,
-    paidCents,
-    shortfallCents,
-    breakdown,
-  };
+}
+
+/** Bill counts move by atomic server-side increments, so a concurrent deposit
+ * or manual adjustment can't be clobbered by a stale absolute count. The
+ * `>= 0` rule on cash/counts rejects the whole update if the drawer ran out
+ * first — the payment is never half-applied. */
+function spendBills(
+  updates: Record<string, unknown>,
+  breakdown: BillBreakdown,
+): void {
+  for (const [bill, used] of Object.entries(breakdown)) {
+    if (used > 0) updates[`cash/counts/${bill}`] = increment(-used);
+  }
 }
 
 /**
@@ -350,6 +383,11 @@ export function computeSavePay(): SavePayComputation {
  */
 export function commitSavePay(calc: SavePayComputation): Promise<void> {
   const { week, cashCounts } = readStore();
+  try {
+    assertDrawerCovers(cashCounts, calc.breakdown);
+  } catch (err) {
+    return Promise.reject(err);
+  }
   const label = weekLabel(week.weekStart);
   const now = Date.now();
   const historyKey = push(child(ref(db), 'x')).key as string;
@@ -372,7 +410,15 @@ export function commitSavePay(calc: SavePayComputation): Promise<void> {
   };
 
   const updates: Record<string, unknown> = {};
-  updates[`history/${historyKey}`] = { ...entry, paidAt: serverTimestamp() };
+  // RTDB rejects an update carrying `undefined` anywhere in it, so every
+  // optional field is written as an explicit null. (An empty breakdown is
+  // normal: it's what a drawer with no usable bills pays.)
+  updates[`history/${historyKey}`] = {
+    ...entry,
+    breakdown: entry.breakdown ?? null,
+    paidAt: serverTimestamp(),
+    by: uid() ?? null,
+  };
   if (calc.paidCents > 0) {
     updates[`cashTransactions/${txnKey}`] = {
       type: 'withdrawal',
@@ -384,9 +430,7 @@ export function commitSavePay(calc: SavePayComputation): Promise<void> {
       by: uid() ?? null,
     };
   }
-  for (const [bill, used] of Object.entries(calc.breakdown)) {
-    updates[`cash/counts/${bill}`] = Math.max(0, (cashCounts[bill] ?? 0) - used);
-  }
+  spendBills(updates, calc.breakdown);
   updates['week/days'] = null;
   updates['week/bonusCents'] = 0;
   updates['week/carryoverCents'] = calc.shortfallCents;
@@ -402,27 +446,12 @@ export function computeArchivedPay(weekStart: string): SavePayComputation | null
   const { archivedWeeks, settings, cashCounts } = readStore();
   const archived = archivedWeeks[weekStart];
   if (!archived) return null;
-  let minutes = 0;
-  let fuelDays = 0;
-  for (const day of Object.values(archived.days)) {
-    minutes += dayMinutes(day);
-    if (day.fuel) fuelDays++;
-  }
-  const wagesCents = Math.round((minutes / 60) * settings.hourlyRateCents);
-  const fuelCents = fuelDays * settings.fuelRateCents;
-  const totalCents = wagesCents + fuelCents + archived.bonusCents;
-  const { breakdown, paidCents, shortfallCents } = billBreakdown(totalCents, cashCounts);
-  return {
-    minutes,
-    wagesCents,
-    fuelCents,
-    bonusCents: archived.bonusCents,
-    carryoverCents: 0,
-    totalCents,
-    paidCents,
-    shortfallCents,
-    breakdown,
-  };
+  return computePay(
+    archived.days,
+    settings,
+    { bonusCents: archived.bonusCents, carryoverCents: 0 },
+    cashCounts,
+  );
 }
 
 /** Pay an archived week: history + cash txn + bill counts + archive removal
@@ -432,6 +461,11 @@ export function commitArchivedPay(
   calc: SavePayComputation,
 ): Promise<void> {
   const { cashCounts, week } = readStore();
+  try {
+    assertDrawerCovers(cashCounts, calc.breakdown);
+  } catch (err) {
+    return Promise.reject(err);
+  }
   const label = weekLabel(weekStart);
   const now = Date.now();
   const historyKey = push(child(ref(db), 'x')).key as string;
@@ -464,9 +498,7 @@ export function commitArchivedPay(
       by: uid() ?? null,
     };
   }
-  for (const [bill, used] of Object.entries(calc.breakdown)) {
-    updates[`cash/counts/${bill}`] = Math.max(0, (cashCounts[bill] ?? 0) - used);
-  }
+  spendBills(updates, calc.breakdown);
   updates[`archivedWeeks/${weekStart}`] = null;
   if (calc.shortfallCents > 0) {
     updates['week/carryoverCents'] = week.carryoverCents + calc.shortfallCents;
@@ -555,9 +587,8 @@ export function depositCash(counts: Record<string, number>): Promise<void> {
     at: serverTimestamp(),
     by: uid() ?? null,
   };
-  const existing = readStore().cashCounts;
   for (const [bill, n] of Object.entries(counts)) {
-    if (n > 0) updates[`cash/counts/${bill}`] = (existing[bill] ?? 0) + n;
+    if (n > 0) updates[`cash/counts/${bill}`] = increment(n);
   }
   return writing(update(hhRef(), updates));
 }

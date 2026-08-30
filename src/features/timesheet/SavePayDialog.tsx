@@ -49,7 +49,12 @@ export function SavePayDialog({
       );
     } catch (err) {
       console.error(err);
-      toastError('Payment not saved', 'Check your connection and try again.');
+      toastError(
+        'Payment not saved',
+        err instanceof Error && err.message
+          ? err.message
+          : 'Check your connection and try again.',
+      );
     } finally {
       setBusy(false);
     }
