@@ -2,6 +2,7 @@ import { Suspense, lazy, useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { formatCents } from '../../lib/money';
 import { weekLabel } from '../../lib/dates';
+import { orderHistory } from '../../lib/ordering';
 import { historyToCsv, downloadOrShareCsv } from '../../lib/csv';
 import { deleteHistoryEntry } from '../../store/sync';
 import { Button, IconButton } from '../../components/ui/Button';
@@ -77,10 +78,7 @@ export function HistoryTab() {
   const [year, setYear] = useState<number | 'all'>('all');
   const [month, setMonth] = useState<number | 'all'>('all');
 
-  const ordered = useMemo(
-    () => Object.entries(history).sort(([, a], [, b]) => (b.paidAt ?? 0) - (a.paidAt ?? 0)),
-    [history],
-  );
+  const ordered = useMemo(() => orderHistory(history), [history]);
   const allEntries = useMemo(() => ordered.map(([, e]) => e), [ordered]);
   const prior = useMemo(() => Object.values(priorPayments), [priorPayments]);
 
