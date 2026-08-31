@@ -34,16 +34,19 @@ import {
   type HistoryEntry,
 } from '../lib/schema';
 import {
+  breakdownTotalCents,
   cashTotalCents,
   missingBill,
   type BillBreakdown,
   type BillCounts,
   type Cents,
 } from '../lib/money';
-import { computePay, type PayComputation } from '../lib/pay';
+import { computePay, invalidDayKeys, type PayComputation } from '../lib/pay';
 import {
   currentWeekStart,
   formatFull,
+  formatShort,
+  parseDateKey,
   minutesBetween,
   nowHHMM,
   roundToNearest15,
@@ -333,8 +336,35 @@ export function deleteTransaction(id: string): Promise<void> {
   return writing(remove(hhRef(`cashTransactions/${id}`)));
 }
 
-export function deleteHistoryEntry(id: string): Promise<void> {
-  return writing(remove(hhRef(`history/${id}`)));
+/**
+ * Delete a payment record and put its bills back in the drawer. The original
+ * withdrawal stays in the cash ledger and a matching deposit reverses it, so
+ * the two entries explain the swing instead of cash silently reappearing.
+ * Entries with no recorded breakdown (v1 imports, $0 payments) can only be
+ * deleted — `restoredCents` says what actually went back.
+ */
+export function deleteHistoryEntry(id: string): Promise<number> {
+  const entry = readStore().history[id];
+  const breakdown = entry?.breakdown ?? {};
+  const restoredCents = breakdownTotalCents(breakdown);
+
+  const updates: Record<string, unknown> = { [`history/${id}`]: null };
+  if (restoredCents > 0) {
+    const label = entry.weekStart ? weekLabel(entry.weekStart) : 'payment';
+    for (const [bill, used] of Object.entries(breakdown)) {
+      if (used > 0) updates[`cash/counts/${bill}`] = increment(used);
+    }
+    updates[`cashTransactions/${push(child(ref(db), 'x')).key as string}`] = {
+      type: 'deposit',
+      label: `Reversed: Payment: ${label}`,
+      amountCents: restoredCents,
+      breakdown,
+      dateLabel: formatFull(new Date()),
+      at: serverTimestamp(),
+      by: uid() ?? null,
+    };
+  }
+  return writing(update(hhRef(), updates)).then(() => restoredCents);
 }
 
 export type SavePayComputation = PayComputation;
@@ -363,6 +393,20 @@ function assertDrawerCovers(counts: BillCounts, breakdown: BillBreakdown): void 
   }
 }
 
+/** A day whose end isn't after its start silently contributes zero hours, so
+ * paying the week would quietly underpay it. The UI blocks this; the commit
+ * refuses it too, in case the week changed under an open dialog. */
+function assertNoInvalidDays(days: Record<string, DayEntry>): void {
+  const bad = invalidDayKeys(days);
+  if (bad.length > 0) {
+    throw new Error(
+      `${bad.map((k) => formatShort(parseDateKey(k))).join(', ')} ${
+        bad.length === 1 ? 'ends' : 'end'
+      } before the start time. Fix the times, then pay.`,
+    );
+  }
+}
+
 /** Bill counts move by atomic server-side increments, so a concurrent deposit
  * or manual adjustment can't be clobbered by a stale absolute count. The
  * `>= 0` rule on cash/counts rejects the whole update if the drawer ran out
@@ -384,6 +428,7 @@ function spendBills(
 export function commitSavePay(calc: SavePayComputation): Promise<void> {
   const { week, cashCounts } = readStore();
   try {
+    assertNoInvalidDays(week.days);
     assertDrawerCovers(cashCounts, calc.breakdown);
   } catch (err) {
     return Promise.reject(err);
@@ -460,6 +505,9 @@ export function commitArchivedPay(
   weekStart: string,
   calc: SavePayComputation,
 ): Promise<void> {
+  // No invalid-day check here: an archived week has no editor, so refusing to
+  // pay one would strand the money behind a discard. The banner says which
+  // days pay nothing.
   const { cashCounts, week } = readStore();
   try {
     assertDrawerCovers(cashCounts, calc.breakdown);

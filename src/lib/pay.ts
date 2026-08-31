@@ -3,6 +3,7 @@
 // household is shown is always what gets paid and what gets recorded.
 
 import { dayMinutes, type DayEntry, type Settings } from './schema';
+import { minutesBetween } from './dates';
 import { billBreakdown, type BillBreakdown, type BillCounts, type Cents } from './money';
 
 export interface WeekTotals {
@@ -65,4 +66,17 @@ export function computePay(
     shortfallCents,
     breakdown,
   };
+}
+
+/** Days holding both times where the end isn't after the start. They'd pay
+ * zero hours without saying so, so a week holding one can't be paid until
+ * it's corrected. (A day with only one time entered is unfinished, not
+ * wrong — it just hasn't earned hours yet.) */
+export function invalidDayKeys(days: Record<string, DayEntry>): string[] {
+  return Object.entries(days)
+    .filter(
+      ([, d]) => Boolean(d.start) && Boolean(d.end) && minutesBetween(d.start, d.end) <= 0,
+    )
+    .map(([key]) => key)
+    .sort();
 }

@@ -3,12 +3,14 @@ import { useStore } from '../../store/useStore';
 import {
   DAY_NAMES,
   WEEKDAY_INDICES,
+  formatShort,
+  parseDateKey,
   toLocalDateKey,
   weekDayKey,
   weekLabel,
 } from '../../lib/dates';
 import { formatCents, parseDollarInput, centsToDollars } from '../../lib/money';
-import { weekTotals } from '../../lib/pay';
+import { invalidDayKeys, weekTotals } from '../../lib/pay';
 import {
   clearCarryover,
   commitArchivedPay,
@@ -63,7 +65,21 @@ export function TimesheetTab() {
     };
   }, [week, settings]);
 
+  // A day whose end isn't after its start pays zero hours; paying the week
+  // would bury that. Block the payment until it's corrected.
+  const invalidDays = useMemo(() => invalidDayKeys(week.days), [week.days]);
+  const invalidLabel = invalidDays
+    .map((k) => formatShort(parseDateKey(k)))
+    .join(', ');
+
   const openSavePay = () => {
+    if (invalidDays.length > 0) {
+      toastError(
+        'Fix the times first',
+        `${invalidLabel} ${invalidDays.length === 1 ? 'ends' : 'end'} before the start time.`,
+      );
+      return;
+    }
     const calc = computeSavePay();
     if (calc.totalCents <= 0) {
       toastError('Nothing to save', 'Enter some hours first.');
@@ -102,6 +118,7 @@ export function TimesheetTab() {
     <section aria-label="Timesheet" className="space-y-3">
       {pendingArchived.map((w) => {
         const calc = computeArchivedPay(w);
+        const badDays = invalidDayKeys(archivedWeeks[w]?.days ?? {});
         return (
           <div
             key={w}
@@ -116,6 +133,15 @@ export function TimesheetTab() {
                 <span className="text-muted">
                   {' '}
                   — {formatCents(calc.totalCents)} at current rates
+                </span>
+              ) : null}
+              {badDays.length > 0 ? (
+                <span className="block text-xs text-warn">
+                  {badDays.map((k) => formatShort(parseDateKey(k))).join(', ')}{' '}
+                  {badDays.length === 1 ? 'ends' : 'end'} before the start time
+                  and {badDays.length === 1 ? 'pays' : 'pay'} no hours. An
+                  archived week can't be edited — the total above is what it
+                  will pay.
                 </span>
               ) : null}
             </span>
@@ -150,7 +176,12 @@ export function TimesheetTab() {
           <span className="font-semibold text-accent">
             It's payday — {formatCents(totals.totalCents)} due
           </span>
-          <Button variant="primary" className="!min-h-9" onClick={openSavePay}>
+          <Button
+            variant="primary"
+            className="!min-h-9"
+            disabled={invalidDays.length > 0}
+            onClick={openSavePay}
+          >
             Save & Pay
           </Button>
         </div>
@@ -256,8 +287,21 @@ export function TimesheetTab() {
         </div>
       </div>
 
+      {invalidDays.length > 0 ? (
+        <p role="alert" className="text-xs font-medium text-warn">
+          {invalidLabel} {invalidDays.length === 1 ? 'ends' : 'end'} before the
+          start time — those hours aren't counted. Fix the times to enable
+          Save &amp; Pay.
+        </p>
+      ) : null}
+
       <div className="flex gap-2">
-        <Button variant="primary" className="flex-1" onClick={openSavePay}>
+        <Button
+          variant="primary"
+          className="flex-1"
+          disabled={invalidDays.length > 0}
+          onClick={openSavePay}
+        >
           Save & Pay
         </Button>
         <Button variant="danger" onClick={() => setResetOpen(true)}>

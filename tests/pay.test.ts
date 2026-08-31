@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computePay, weekTotals } from '../src/lib/pay';
+import { computePay, invalidDayKeys, weekTotals } from '../src/lib/pay';
 import {
   BILLS,
   breakdownTotalCents,
@@ -165,5 +165,50 @@ describe('payment conserves cash', () => {
     expect(week2.paidCents).toBe(54000);
     expect(week2.shortfallCents).toBe(0);
     expect(week1.paidCents + week2.paidCents).toBe(104000);
+  });
+});
+
+describe('invalidDayKeys', () => {
+  it('flags a day whose end is not after its start', () => {
+    expect(
+      invalidDayKeys({
+        '2026-08-24': day('08:00', '17:00'),
+        '2026-08-25': day('17:00', '08:00'), // reversed
+        '2026-08-26': day('09:00', '09:00'), // zero length
+      }),
+    ).toEqual(['2026-08-25', '2026-08-26']);
+  });
+
+  it('leaves unfinished and empty days alone', () => {
+    expect(
+      invalidDayKeys({
+        '2026-08-24': day('08:00', ''), // punched in, still working
+        '2026-08-25': day('', '17:00'),
+        '2026-08-26': { start: '', end: '', fuel: true },
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('deleting a payment returns what it took', () => {
+  it('restores the drawer to its pre-payment state', () => {
+    const before: BillCounts = { '100': 4, '50': 1, '20': 3, '10': 2, '5': 2 };
+    const calc = computePay(
+      FULL_WEEK,
+      SETTINGS,
+      { bonusCents: 0, carryoverCents: 0 },
+      before,
+    );
+    const after = subtractBreakdown(before, calc.breakdown);
+
+    // Deleting the history entry hands the same bills back.
+    const restored: BillCounts = { ...after };
+    for (const [bill, used] of Object.entries(calc.breakdown)) {
+      restored[bill] = (restored[bill] ?? 0) + used;
+    }
+
+    expect(restored).toEqual(before);
+    expect(breakdownTotalCents(calc.breakdown)).toBe(calc.paidCents);
+    expect(cashTotalCents(restored) - cashTotalCents(after)).toBe(calc.paidCents);
   });
 });

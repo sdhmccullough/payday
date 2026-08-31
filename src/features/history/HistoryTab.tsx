@@ -1,13 +1,13 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { formatCents } from '../../lib/money';
+import { breakdownTotalCents, formatBreakdown, formatCents } from '../../lib/money';
 import { weekLabel } from '../../lib/dates';
 import { orderHistory } from '../../lib/ordering';
 import { historyToCsv, downloadOrShareCsv } from '../../lib/csv';
 import { deleteHistoryEntry } from '../../store/sync';
 import { Button, IconButton } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/Dialog';
-import { toastError } from '../../components/ui/Toast';
+import { toast, toastError } from '../../components/ui/Toast';
 import { TrashIcon } from '../../components/icons';
 import {
   filterByPeriod,
@@ -75,6 +75,9 @@ export function HistoryTab() {
   const history = useStore((s) => s.history);
   const priorPayments = useStore((s) => s.priorPayments);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  // Deleting a record hands its bills back to the drawer — say exactly which.
+  const pendingDelete = deleteId !== null ? history[deleteId] : undefined;
+  const refundCents = breakdownTotalCents(pendingDelete?.breakdown ?? {});
   const [year, setYear] = useState<number | 'all'>('all');
   const [month, setMonth] = useState<number | 'all'>('all');
 
@@ -245,12 +248,27 @@ export function HistoryTab() {
           if (!o) setDeleteId(null);
         }}
         title="Delete this payment record?"
-        body="This removes the history entry only — cash counts and carryover are not changed."
+        body={
+          refundCents > 0
+            ? `${formatCents(refundCents)} goes back into the cash drawer (${formatBreakdown(
+                pendingDelete?.breakdown ?? {},
+              )}) as a reversal entry. Carryover is not changed.`
+            : 'This payment has no recorded bill breakdown, so no cash can be returned — the history entry is removed on its own.'
+        }
         confirmLabel="Delete"
         danger
         onConfirm={() => {
           if (deleteId)
-            deleteHistoryEntry(deleteId).catch(() => toastError('Not synced'));
+            deleteHistoryEntry(deleteId)
+              .then((restored) => {
+                if (restored > 0) {
+                  toast(
+                    `Returned ${formatCents(restored)} to the drawer`,
+                    'Logged as a reversal in the cash ledger.',
+                  );
+                }
+              })
+              .catch(() => toastError('Not synced'));
           setDeleteId(null);
         }}
       />
