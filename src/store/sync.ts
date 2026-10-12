@@ -18,6 +18,7 @@ import {
 import { db } from '../lib/firebase';
 import { patchStore, readStore, useStore } from './useStore';
 import {
+  dayForWrite,
   dayMinutes,
   normalizeArchived,
   normalizeCounts,
@@ -128,7 +129,7 @@ function uid(): string | undefined {
 export async function attachHousehold(hid: string): Promise<void> {
   detachHousehold();
   currentHid = hid;
-  patchStore({ householdId: hid, syncStatus: 'connecting' });
+  patchStore({ householdId: hid, syncStatus: 'connecting', viewWeek: null });
 
   hydrateFromCache(hid);
 
@@ -269,7 +270,23 @@ export function punchToday(kind: 'start' | 'end'): Promise<void> {
 }
 
 export function clearDay(dateKey: string, weekStart?: string): Promise<void> {
-  return writing(remove(hhRef(`${weekNode(weekStart)}/days/${dateKey}`)));
+  const node = weekNode(weekStart);
+  if (node !== 'week' && archiveWouldBeEmpty(weekStart!, { clearDay: dateKey })) {
+    return writing(remove(hhRef(node)));
+  }
+  return writing(remove(hhRef(`${node}/days/${dateKey}`)));
+}
+
+/** An archive with no days and no bonus would show a "wasn't paid" banner
+ * for nothing, so edits that would leave one remove the node instead. */
+function archiveWouldBeEmpty(
+  weekStart: string,
+  change: { clearDay?: string; bonusCents?: number },
+): boolean {
+  const a = readStore().archivedWeeks[weekStart];
+  const days = Object.keys(a?.days ?? {}).filter((k) => k !== change.clearDay);
+  const bonus = change.bonusCents ?? a?.bonusCents ?? 0;
+  return days.length === 0 && bonus <= 0;
 }
 
 export function fillDefaults(
@@ -302,7 +319,11 @@ export function setPaydayDay(paydayDay: number): Promise<void> {
 }
 
 export function setBonus(bonusCents: Cents, weekStart?: string): Promise<void> {
-  return writing(update(hhRef(weekNode(weekStart)), { bonusCents }));
+  const node = weekNode(weekStart);
+  if (node !== 'week' && archiveWouldBeEmpty(weekStart!, { bonusCents })) {
+    return writing(remove(hhRef(node)));
+  }
+  return writing(update(hhRef(node), { bonusCents }));
 }
 
 export function clearCarryover(): Promise<void> {
@@ -531,9 +552,15 @@ async function reconcileWeekIfStale(): Promise<void> {
 
   reconciling = true;
   try {
-    let archived: { weekStart: string; days: unknown; bonusCents: number } | null =
-      null;
+    let archived: {
+      weekStart: string;
+      days: Record<string, DayEntry>;
+      bonusCents: number;
+    } | null = null;
     await runTransaction(hhRef('week'), (raw) => {
+      // The handler re-runs on contention; a stale snapshot from an earlier
+      // attempt must not survive into the archive write.
+      archived = null;
       const w = normalizeWeek(raw);
       if (w.weekStart === nowStart) return raw; // someone else already rolled
       archived =
@@ -548,11 +575,21 @@ async function reconcileWeekIfStale(): Promise<void> {
       };
     });
     if (archived !== null) {
-      const a = archived as { weekStart: string; days: unknown; bonusCents: number };
-      await update(hhRef(`archivedWeeks/${a.weekStart}`), {
-        days: a.days,
-        bonusCents: a.bonusCents,
-      });
+      const a = archived as {
+        weekStart: string;
+        days: Record<string, DayEntry>;
+        bonusCents: number;
+      };
+      // Per-day paths merge with anything already logged against this week
+      // from the past-week view, instead of replacing its days wholesale.
+      const updates: Record<string, unknown> = {};
+      for (const [k, d] of Object.entries(a.days)) {
+        updates[`archivedWeeks/${a.weekStart}/days/${k}`] = dayForWrite(d);
+      }
+      if (a.bonusCents > 0) {
+        updates[`archivedWeeks/${a.weekStart}/bonusCents`] = a.bonusCents;
+      }
+      await update(hhRef(), updates);
     }
   } finally {
     reconciling = false;

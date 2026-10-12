@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useStore } from '../../store/useStore';
+import { selectShownWeekStart, useStore } from '../../store/useStore';
 import {
   DAY_NAMES,
   WEEKDAY_INDICES,
@@ -45,7 +45,6 @@ export function TimesheetTab() {
   const settings = useStore((s) => s.settings);
   const archivedWeeks = useStore((s) => s.archivedWeeks);
   const history = useStore((s) => s.history);
-  const viewWeek = useStore((s) => s.viewWeek);
   const setViewWeek = useStore((s) => s.setViewWeek);
   const [resetOpen, setResetOpen] = useState(false);
   const [payCalc, setPayCalc] = useState<SavePayComputation | null>(null);
@@ -62,8 +61,7 @@ export function TimesheetTab() {
   // The week on screen: the live week, or an earlier one opened with the
   // arrows. Past weeks read/write their archivedWeeks entry, which is what
   // the late-pay flow already settles.
-  const shownStart =
-    viewWeek && viewWeek < week.weekStart ? viewWeek : week.weekStart;
+  const shownStart = useStore(selectShownWeekStart);
   const isPast = shownStart !== week.weekStart;
   const shownDays = isPast
     ? (archivedWeeks[shownStart]?.days ?? {})

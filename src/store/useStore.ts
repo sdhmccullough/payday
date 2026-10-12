@@ -89,6 +89,12 @@ export const useStore = create<Store>((set) => ({
   demoMode: false,
 }));
 
+/** Week shown in the timesheet. A viewWeek at or past the live week falls
+ * back to the live week, so every caller resolves it the same way. */
+export function selectShownWeekStart(s: Pick<Store, 'viewWeek' | 'week'>): string {
+  return s.viewWeek && s.viewWeek < s.week.weekStart ? s.viewWeek : s.week.weekStart;
+}
+
 /** Imperative setter for non-React modules (sync layer, auth). */
 export const patchStore = useStore.setState;
 export const readStore = useStore.getState;
