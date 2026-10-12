@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { useStore, type Tab } from './store/useStore';
+import { selectShownWeekStart, useStore, type Tab } from './store/useStore';
 import { redeemPendingInvite } from './store/auth';
 import { computeSavePay } from './store/sync';
 import { formatCents } from './lib/money';
@@ -64,6 +64,12 @@ function AppShell() {
   const tab = useStore((s) => s.tab);
   const setTab = useStore((s) => s.setTab);
   const week = useStore((s) => s.week);
+  const shownWeekStart = useStore(selectShownWeekStart);
+  const shownWeekPaid = useStore(
+    (s) =>
+      shownWeekStart !== s.week.weekStart &&
+      Object.values(s.history).some((h) => h.weekStart === shownWeekStart),
+  );
   const settings = useStore((s) => s.settings);
   const migrating = useStore((s) => s.migrating);
   const demoMode = useStore((s) => s.demoMode);
@@ -109,10 +115,10 @@ function AppShell() {
             ))}
           </Tabs.List>
           <div className="flex items-center gap-1">
-            {tab === 'timesheet' ? (
+            {tab === 'timesheet' && !shownWeekPaid ? (
               <IconButton
                 label="Fill Mon–Fri 8AM–5PM"
-                onClick={() => fillWeekDefaults(week.weekStart)}
+                onClick={() => fillWeekDefaults(shownWeekStart)}
               >
                 <CalendarCheckIcon className="size-5" />
               </IconButton>

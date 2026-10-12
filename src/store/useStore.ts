@@ -47,6 +47,9 @@ interface Store {
   // ui
   tab: Tab;
   setTab: (tab: Tab) => void;
+  /** Past week open in the timesheet; null = the live week. */
+  viewWeek: string | null;
+  setViewWeek: (weekStart: string | null) => void;
   /** Invite token from a ?invite= link, pending user confirmation. */
   pendingInvite: string | null;
   setPendingInvite: (token: string | null) => void;
@@ -78,11 +81,19 @@ export const useStore = create<Store>((set) => ({
 
   tab: 'timesheet',
   setTab: (tab) => set({ tab }),
+  viewWeek: null,
+  setViewWeek: (viewWeek) => set({ viewWeek }),
   pendingInvite: null,
   setPendingInvite: (token) => set({ pendingInvite: token }),
   installAvailable: false,
   demoMode: false,
 }));
+
+/** Week shown in the timesheet. A viewWeek at or past the live week falls
+ * back to the live week, so every caller resolves it the same way. */
+export function selectShownWeekStart(s: Pick<Store, 'viewWeek' | 'week'>): string {
+  return s.viewWeek && s.viewWeek < s.week.weekStart ? s.viewWeek : s.week.weekStart;
+}
 
 /** Imperative setter for non-React modules (sync layer, auth). */
 export const patchStore = useStore.setState;

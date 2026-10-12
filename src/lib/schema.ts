@@ -136,6 +136,20 @@ export function normalizeDay(v: unknown): DayEntry {
   };
 }
 
+/** A normalized day as an RTDB write payload. RTDB rejects the WHOLE write
+ * if any nested value is undefined, and normalizeDay leaves optional fields
+ * as undefined, so they must be dropped before writing a day back. */
+export function dayForWrite(entry: DayEntry): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    start: entry.start,
+    end: entry.end,
+    fuel: entry.fuel,
+  };
+  if (entry.breakMinutes) out.breakMinutes = entry.breakMinutes;
+  if (entry.by) out.by = entry.by;
+  return out;
+}
+
 /** Paid minutes for a day: the start–end span minus any unpaid break. */
 export function dayMinutes(entry: DayEntry | undefined): number {
   if (!entry) return 0;
@@ -232,7 +246,9 @@ export function normalizeArchived(v: unknown): ArchivedWeek {
   const o = rec(v);
   const days: Record<string, DayEntry> = {};
   for (const [k, d] of Object.entries(rec(o.days))) days[k] = normalizeDay(d);
-  return { days, bonusCents: num(o.bonusCents) };
+  // Archives are payable, and RTDB rules don't type-check them: never let a
+  // bad bonus value reduce what's owed.
+  return { days, bonusCents: Math.max(0, num(o.bonusCents)) };
 }
 
 export function normalizeMember(v: unknown): Member {

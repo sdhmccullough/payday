@@ -8,6 +8,7 @@ import {
   parseDateKey,
   roundToNearest15,
   roundToNearest5,
+  shiftWeek,
   toLocalDateKey,
   weekDayKey,
   weekLabel,
@@ -128,5 +129,27 @@ describe('minutesBetween', () => {
   it('returns 0 for missing values', () => {
     expect(minutesBetween('', '17:00')).toBe(0);
     expect(minutesBetween('08:00', '')).toBe(0);
+  });
+});
+
+describe('shiftWeek', () => {
+  it('steps whole weeks across month and year boundaries', () => {
+    expect(shiftWeek('2026-10-10', -1)).toBe('2026-10-03');
+    expect(shiftWeek('2026-10-03', 1)).toBe('2026-10-10');
+    expect(shiftWeek('2026-01-03', -1)).toBe('2025-12-27');
+  });
+
+  it('stays on Saturday across a DST change', () => {
+    // US DST ends Nov 1 2026; local-midnight math must not drift a day.
+    // Pin a DST zone so this bites under a UTC CI runner too.
+    const prev = process.env.TZ;
+    process.env.TZ = 'America/Denver';
+    try {
+      expect(shiftWeek('2026-10-31', 1)).toBe('2026-11-07');
+      expect(shiftWeek('2026-11-07', -1)).toBe('2026-10-31');
+      expect(parseDateKey(shiftWeek('2026-10-31', 1)).getDay()).toBe(6);
+    } finally {
+      process.env.TZ = prev;
+    }
   });
 });

@@ -31,6 +31,18 @@ export const XIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const ChevronLeftIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <polyline points="15 18 9 12 15 6" />
+  </Icon>
+);
+
+export const ChevronRightIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <polyline points="9 18 15 12 9 6" />
+  </Icon>
+);
+
 export const GearIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="3" />

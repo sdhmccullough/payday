@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dayForWrite,
   dayMinutes,
+  normalizeArchived,
   normalizeDay,
   withAutoFuel,
   type DayEntry,
@@ -84,5 +86,31 @@ describe('dayMinutes', () => {
     expect(normalizeDay({ start: '08:00', end: '17:00', breakMinutes: 120.4 }).breakMinutes).toBe(120);
     expect(normalizeDay({ start: '08:00', end: '17:00', breakMinutes: -5 }).breakMinutes).toBeUndefined();
     expect(normalizeDay({ start: '08:00', end: '17:00' }).breakMinutes).toBeUndefined();
+  });
+});
+
+describe('dayForWrite', () => {
+  // RTDB rejects an entire update if any nested value is undefined; the
+  // week rollover writes normalized days back, so this guards that write.
+  it('never carries undefined values', () => {
+    const d = normalizeDay({ start: '08:00', end: '17:00', fuel: true });
+    expect(d.breakMinutes).toBeUndefined();
+    const out = dayForWrite(d);
+    expect(Object.values(out).some((v) => v === undefined)).toBe(false);
+    expect(out).toEqual({ start: '08:00', end: '17:00', fuel: true });
+  });
+
+  it('keeps break and editor when present', () => {
+    const d = normalizeDay({ start: '08:00', end: '17:00', fuel: false, breakMinutes: 30, by: 'u1' });
+    expect(dayForWrite(d)).toEqual({
+      start: '08:00', end: '17:00', fuel: false, breakMinutes: 30, by: 'u1',
+    });
+  });
+});
+
+describe('normalizeArchived', () => {
+  it('never yields a negative bonus', () => {
+    expect(normalizeArchived({ bonusCents: -500 }).bonusCents).toBe(0);
+    expect(normalizeArchived({ bonusCents: 'x' }).bonusCents).toBe(0);
   });
 });
