@@ -3,6 +3,8 @@ import { useStore } from '../../store/useStore';
 import {
   DAY_NAMES,
   WEEKDAY_INDICES,
+  formatFull,
+  shiftWeek,
   toLocalDateKey,
   weekDayKey,
   weekLabel,
@@ -26,11 +28,11 @@ import { SavePayDialog } from './SavePayDialog';
 import { Button, IconButton } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/Dialog';
 import { toastError } from '../../components/ui/Toast';
-import { XIcon } from '../../components/icons';
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from '../../components/icons';
 import { debounce } from '../../lib/debounce';
 
-const debouncedSetBonus = debounce((cents: number) => {
-  setBonus(cents).catch(() => toastError('Bonus not synced'));
+const debouncedSetBonus = debounce((cents: number, weekStart: string) => {
+  setBonus(cents, weekStart).catch(() => toastError('Bonus not synced'));
 }, 400);
 
 /** Position of a getDay() value inside the Sat-anchored week (Sat=0 … Fri=6). */
@@ -42,6 +44,9 @@ export function TimesheetTab() {
   const week = useStore((s) => s.week);
   const settings = useStore((s) => s.settings);
   const archivedWeeks = useStore((s) => s.archivedWeeks);
+  const history = useStore((s) => s.history);
+  const viewWeek = useStore((s) => s.viewWeek);
+  const setViewWeek = useStore((s) => s.setViewWeek);
   const [resetOpen, setResetOpen] = useState(false);
   const [payCalc, setPayCalc] = useState<SavePayComputation | null>(null);
   const [payOpen, setPayOpen] = useState(false);
@@ -54,10 +59,37 @@ export function TimesheetTab() {
   } | null>(null);
   const [archivedPayOpen, setArchivedPayOpen] = useState(false);
 
+  // The week on screen: the live week, or an earlier one opened with the
+  // arrows. Past weeks read/write their archivedWeeks entry, which is what
+  // the late-pay flow already settles.
+  const shownStart =
+    viewWeek && viewWeek < week.weekStart ? viewWeek : week.weekStart;
+  const isPast = shownStart !== week.weekStart;
+  const shownDays = isPast
+    ? (archivedWeeks[shownStart]?.days ?? {})
+    : week.days;
+  const shownBonusCents = isPast
+    ? (archivedWeeks[shownStart]?.bonusCents ?? 0)
+    : week.bonusCents;
+  const shownCarryoverCents = isPast ? 0 : week.carryoverCents;
+  const paidRecords = useMemo(
+    () =>
+      isPast
+        ? Object.values(history).filter((h) => h.weekStart === shownStart)
+        : [],
+    [history, isPast, shownStart],
+  );
+
+  const goToWeek = (weekStart: string) => {
+    debouncedSetBonus.flush();
+    setBonusText(null);
+    setViewWeek(weekStart >= week.weekStart ? null : weekStart);
+  };
+
   const totals = useMemo(() => {
     let minutes = 0;
     let fuelDays = 0;
-    for (const d of Object.values(week.days)) {
+    for (const d of Object.values(shownDays)) {
       minutes += dayMinutes(d);
       if (d.fuel) fuelDays++;
     }
@@ -68,11 +100,21 @@ export function TimesheetTab() {
       wagesCents,
       fuelCents,
       totalCents:
-        wagesCents + fuelCents + week.bonusCents + week.carryoverCents,
+        wagesCents + fuelCents + shownBonusCents + shownCarryoverCents,
     };
-  }, [week, settings]);
+  }, [shownDays, shownBonusCents, shownCarryoverCents, settings]);
 
   const openSavePay = () => {
+    if (isPast) {
+      const calc = computeArchivedPay(shownStart);
+      if (!calc || calc.totalCents <= 0) {
+        toastError('Nothing to save', 'Enter some hours first.');
+        return;
+      }
+      setArchivedPay({ weekStart: shownStart, calc });
+      setArchivedPayOpen(true);
+      return;
+    }
     const calc = computeSavePay();
     if (calc.totalCents <= 0) {
       toastError('Nothing to save', 'Enter some hours first.');
@@ -83,9 +125,10 @@ export function TimesheetTab() {
   };
 
   const bonusValue =
-    bonusText ?? (week.bonusCents ? String(centsToDollars(week.bonusCents)) : '');
+    bonusText ?? (shownBonusCents ? String(centsToDollars(shownBonusCents)) : '');
 
   const isPayday =
+    !isPast &&
     totals.totalCents > 0 &&
     Object.keys(week.days).length > 0 &&
     weekPosition(new Date().getDay()) >= weekPosition(settings.paydayDay);
@@ -132,6 +175,11 @@ export function TimesheetTab() {
               <Button variant="primary" className="!min-h-9" onClick={() => openArchivedPay(w)}>
                 Pay now
               </Button>
+              {w !== shownStart ? (
+                <Button variant="ghost" className="!min-h-9" onClick={() => goToWeek(w)}>
+                  Open
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 className="!min-h-9"
@@ -167,22 +215,69 @@ export function TimesheetTab() {
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-5">
       <div>
-      <PunchBanner />
+      {isPast ? null : <PunchBanner />}
 
-      <h2 className="mt-3 mb-3 text-sm font-semibold text-muted">
-        Week of {weekLabel(week.weekStart)}
-      </h2>
+      <div className="mt-3 mb-3 flex items-center justify-between gap-2">
+        <IconButton
+          label="Previous week"
+          className="!size-9"
+          onClick={() => goToWeek(shiftWeek(shownStart, -1))}
+        >
+          <ChevronLeftIcon className="size-5" />
+        </IconButton>
+        <div className="flex flex-col items-center text-center">
+          <h2 className="text-sm font-semibold text-muted">
+            Week of {weekLabel(shownStart)}
+          </h2>
+          {isPast ? (
+            <button
+              type="button"
+              onClick={() => goToWeek(week.weekStart)}
+              className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+            >
+              Back to this week
+            </button>
+          ) : null}
+        </div>
+        <IconButton
+          label="Next week"
+          className="!size-9 disabled:opacity-30 disabled:pointer-events-none"
+          disabled={!isPast}
+          onClick={() => goToWeek(shiftWeek(shownStart, 1))}
+        >
+          <ChevronRightIcon className="size-5" />
+        </IconButton>
+      </div>
+
+      {paidRecords.length > 0 ? (
+        <p
+          role="status"
+          className="mb-3 rounded-(--radius-control) border border-warn/30 bg-surface p-3 text-sm"
+        >
+          <span className="font-semibold text-warn">Already paid: </span>
+          {paidRecords
+            .map(
+              (h) =>
+                `${formatCents(h.amountPaidCents)} on ${
+                  h.paidAt ? formatFull(new Date(h.paidAt)) : h.paidDateLabel
+                }`,
+            )
+            .join('; ')}
+          . Hours added here are paid on top of that.
+        </p>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {DAY_NAMES.map((name, i) => {
-          const key = weekDayKey(week.weekStart, i);
+          const key = weekDayKey(shownStart, i);
           return (
             <DayCard
               key={key}
               dayName={name}
               dateKey={key}
-              entry={week.days[key]}
+              entry={shownDays[key]}
               isToday={key === toLocalDateKey(new Date())}
+              weekStart={shownStart}
             />
           );
         })}
@@ -191,12 +286,12 @@ export function TimesheetTab() {
 
       <div className="mt-3 space-y-3 lg:sticky lg:top-4 lg:mt-8">
       <div className="rounded-(--radius-card) border border-line bg-surface p-4 shadow-(--shadow-card)">
-        {week.carryoverCents > 0 ? (
+        {shownCarryoverCents > 0 ? (
           <div className="flex items-center justify-between border-b border-line py-2 text-sm">
             <span className="font-medium text-warn">Carryover from last week</span>
             <span className="flex items-center gap-1">
               <span className="font-semibold text-warn tabular-nums">
-                {formatCents(week.carryoverCents)}
+                {formatCents(shownCarryoverCents)}
               </span>
               <IconButton
                 label="Clear carryover"
@@ -243,8 +338,8 @@ export function TimesheetTab() {
               onChange={(e) => {
                 setBonusText(e.target.value);
                 const cents = parseDollarInput(e.target.value);
-                if (cents !== null) debouncedSetBonus(cents);
-                else if (e.target.value.trim() === '') debouncedSetBonus(0);
+                if (cents !== null) debouncedSetBonus(cents, shownStart);
+                else if (e.target.value.trim() === '') debouncedSetBonus(0, shownStart);
               }}
               onBlur={() => {
                 debouncedSetBonus.flush();
@@ -270,7 +365,7 @@ export function TimesheetTab() {
           Save & Pay
         </Button>
         <Button variant="danger" onClick={() => setResetOpen(true)}>
-          Reset week
+          {isPast ? 'Clear week' : 'Reset week'}
         </Button>
       </div>
       </div>
@@ -279,12 +374,18 @@ export function TimesheetTab() {
       <ConfirmDialog
         open={resetOpen}
         onOpenChange={setResetOpen}
-        title="Reset this week?"
-        body="All times and fuel toggles for this week will be cleared. Payment history is not affected."
-        confirmLabel="Reset week"
+        title={isPast ? `Clear week of ${weekLabel(shownStart)}?` : 'Reset this week?'}
+        body={
+          isPast
+            ? 'All unpaid times, fuel toggles and bonus for this week will be cleared. Payment history is not affected.'
+            : 'All times and fuel toggles for this week will be cleared. Payment history is not affected.'
+        }
+        confirmLabel={isPast ? 'Clear week' : 'Reset week'}
         danger
         onConfirm={() => {
-          resetWeekDays().catch(() => toastError('Reset not synced'));
+          (isPast ? discardArchivedWeek(shownStart) : resetWeekDays()).catch(() =>
+            toastError('Reset not synced'),
+          );
         }}
       />
 
@@ -323,7 +424,7 @@ export function TimesheetTab() {
 
 export function fillWeekDefaults(weekStart: string): void {
   const keys = WEEKDAY_INDICES.map((i) => weekDayKey(weekStart, i));
-  fillDefaults(keys, '08:00', '17:00').catch(() =>
+  fillDefaults(keys, '08:00', '17:00', weekStart).catch(() =>
     toastError('Not synced', 'Check your connection.'),
   );
 }

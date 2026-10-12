@@ -67,6 +67,13 @@ export function formatFull(d: Date): string {
   });
 }
 
+/** weekStart shifted by `weeks` (negative = earlier). */
+export function shiftWeek(weekStart: string, weeks: number): string {
+  const d = parseDateKey(weekStart);
+  d.setDate(d.getDate() + weeks * 7);
+  return toLocalDateKey(d);
+}
+
 export function weekLabel(weekStart: string): string {
   const sat = parseDateKey(weekStart);
   const fri = new Date(sat);

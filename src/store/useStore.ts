@@ -47,6 +47,9 @@ interface Store {
   // ui
   tab: Tab;
   setTab: (tab: Tab) => void;
+  /** Past week open in the timesheet; null = the live week. */
+  viewWeek: string | null;
+  setViewWeek: (weekStart: string | null) => void;
   /** Invite token from a ?invite= link, pending user confirmation. */
   pendingInvite: string | null;
   setPendingInvite: (token: string | null) => void;
@@ -78,6 +81,8 @@ export const useStore = create<Store>((set) => ({
 
   tab: 'timesheet',
   setTab: (tab) => set({ tab }),
+  viewWeek: null,
+  setViewWeek: (viewWeek) => set({ viewWeek }),
   pendingInvite: null,
   setPendingInvite: (token) => set({ pendingInvite: token }),
   installAvailable: false,

@@ -18,11 +18,14 @@ export const DayCard = memo(function DayCard({
   dateKey,
   entry,
   isToday = false,
+  weekStart,
 }: {
   dayName: string;
   dateKey: string;
   entry: DayEntry | undefined;
   isToday?: boolean;
+  /** Week the day belongs to; omitted = the live week. */
+  weekStart?: string;
 }) {
   const start = entry?.start ?? '';
   const end = entry?.end ?? '';
@@ -61,7 +64,7 @@ export const DayCard = memo(function DayCard({
             <IconButton
               label={`Clear ${dayName}`}
               className="!size-9"
-              onClick={() => clearDay(dateKey).catch(onWriteError)}
+              onClick={() => clearDay(dateKey, weekStart).catch(onWriteError)}
             >
               <XIcon className="size-4" />
             </IconButton>
@@ -77,7 +80,7 @@ export const DayCard = memo(function DayCard({
             step={60}
             value={start}
             onChange={(e) =>
-              setDayField(dateKey, { start: e.target.value }).catch(onWriteError)
+              setDayField(dateKey, { start: e.target.value }, weekStart).catch(onWriteError)
             }
             className="min-h-11 w-full rounded-(--radius-control) border border-line bg-surface-2 px-3 text-sm"
           />
@@ -92,7 +95,7 @@ export const DayCard = memo(function DayCard({
             step={60}
             value={end}
             onChange={(e) =>
-              setDayField(dateKey, { end: e.target.value }).catch(onWriteError)
+              setDayField(dateKey, { end: e.target.value }, weekStart).catch(onWriteError)
             }
             className="min-h-11 w-full rounded-(--radius-control) border border-line bg-surface-2 px-3 text-sm"
           />
@@ -112,7 +115,7 @@ export const DayCard = memo(function DayCard({
         <Switch
           checked={fuel}
           onCheckedChange={(v) =>
-            setDayField(dateKey, { fuel: v }).catch(onWriteError)
+            setDayField(dateKey, { fuel: v }, weekStart).catch(onWriteError)
           }
           label={`Fuel reimbursement for ${dayName}`}
         />
@@ -129,7 +132,7 @@ export const DayCard = memo(function DayCard({
               aria-label={`Unpaid break minutes for ${dayName}`}
               onChange={(e) => {
                 const n = Math.max(0, Math.round(Number(e.target.value) || 0));
-                setDayField(dateKey, { breakMinutes: n }).catch(onWriteError);
+                setDayField(dateKey, { breakMinutes: n }, weekStart).catch(onWriteError);
               }}
               className="min-h-10 w-16 rounded-(--radius-control) border border-line bg-surface-2 px-2 text-right text-sm tabular-nums"
             />

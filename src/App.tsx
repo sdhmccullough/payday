@@ -64,6 +64,7 @@ function AppShell() {
   const tab = useStore((s) => s.tab);
   const setTab = useStore((s) => s.setTab);
   const week = useStore((s) => s.week);
+  const viewWeek = useStore((s) => s.viewWeek);
   const settings = useStore((s) => s.settings);
   const migrating = useStore((s) => s.migrating);
   const demoMode = useStore((s) => s.demoMode);
@@ -112,7 +113,7 @@ function AppShell() {
             {tab === 'timesheet' ? (
               <IconButton
                 label="Fill Mon–Fri 8AM–5PM"
-                onClick={() => fillWeekDefaults(week.weekStart)}
+                onClick={() => fillWeekDefaults(viewWeek ?? week.weekStart)}
               >
                 <CalendarCheckIcon className="size-5" />
               </IconButton>

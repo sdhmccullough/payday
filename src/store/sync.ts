@@ -226,13 +226,31 @@ function writing<T>(p: Promise<T>): Promise<T> {
   );
 }
 
+/** RTDB node holding a week's days/bonus: the live week, or a past week's
+ * archive entry (where rollover parks unpaid hours, and where hours added
+ * after the fact land so the existing late-pay flow can settle them). */
+function weekNode(weekStart?: string): string {
+  if (!weekStart || weekStart === readStore().week.weekStart) return 'week';
+  return `archivedWeeks/${weekStart}`;
+}
+
+function daysFor(weekStart?: string): Record<string, DayEntry> {
+  const s = readStore();
+  if (!weekStart || weekStart === s.week.weekStart) return s.week.days;
+  return s.archivedWeeks[weekStart]?.days ?? {};
+}
+
 export function setDayField(
   dateKey: string,
   patch: Partial<Pick<DayEntry, 'start' | 'end' | 'fuel' | 'breakMinutes'>>,
+  weekStart?: string,
 ): Promise<void> {
-  const fullPatch = withAutoFuel(readStore().week.days[dateKey], patch);
+  const fullPatch = withAutoFuel(daysFor(weekStart)[dateKey], patch);
   return writing(
-    update(hhRef(`week/days/${dateKey}`), { ...fullPatch, by: uid() ?? null }),
+    update(hhRef(`${weekNode(weekStart)}/days/${dateKey}`), {
+      ...fullPatch,
+      by: uid() ?? null,
+    }),
   );
 }
 
@@ -250,21 +268,23 @@ export function punchToday(kind: 'start' | 'end'): Promise<void> {
   return setDayField(todayKey, { [kind]: time });
 }
 
-export function clearDay(dateKey: string): Promise<void> {
-  return writing(remove(hhRef(`week/days/${dateKey}`)));
+export function clearDay(dateKey: string, weekStart?: string): Promise<void> {
+  return writing(remove(hhRef(`${weekNode(weekStart)}/days/${dateKey}`)));
 }
 
 export function fillDefaults(
   keys: string[],
   start: string,
   end: string,
+  weekStart?: string,
 ): Promise<void> {
+  const node = weekNode(weekStart);
   const updates: Record<string, unknown> = {};
   for (const k of keys) {
-    updates[`week/days/${k}/start`] = start;
-    updates[`week/days/${k}/end`] = end;
-    updates[`week/days/${k}/fuel`] = true;
-    updates[`week/days/${k}/by`] = uid() ?? null;
+    updates[`${node}/days/${k}/start`] = start;
+    updates[`${node}/days/${k}/end`] = end;
+    updates[`${node}/days/${k}/fuel`] = true;
+    updates[`${node}/days/${k}/by`] = uid() ?? null;
   }
   return writing(update(hhRef(), updates));
 }
@@ -281,8 +301,8 @@ export function setPaydayDay(paydayDay: number): Promise<void> {
   return writing(update(hhRef('settings'), { paydayDay }));
 }
 
-export function setBonus(bonusCents: Cents): Promise<void> {
-  return writing(update(hhRef('week'), { bonusCents }));
+export function setBonus(bonusCents: Cents, weekStart?: string): Promise<void> {
+  return writing(update(hhRef(weekNode(weekStart)), { bonusCents }));
 }
 
 export function clearCarryover(): Promise<void> {
