@@ -60,7 +60,7 @@ export function PunchBanner() {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-(--radius-card) border border-accent/35 bg-surface p-3 text-sm shadow-(--shadow-card)">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-(--radius-card) border border-now/45 bg-surface p-3 text-sm shadow-(--shadow-card)">
       <span>
         {start ? (
           <>

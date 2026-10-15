@@ -1,14 +1,18 @@
 // Lazy-loaded (recharts stays out of the main bundle). Single-series by
 // design: the Pay/Hours toggle switches the measure instead of stacking a
-// second axis on one chart.
+// second axis on one chart. The weekly chart is "focus + average": older
+// weeks recede (--chart-rest), the latest paid week carries the mark, and a
+// dashed line shows the average of the paid weeks in view.
 
 import { useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,6 +25,8 @@ import { lastNWeeks, monthlyRollup } from './insights';
 type Metric = 'pay' | 'hours';
 
 const MARK = 'var(--chart-mark)';
+const REST = 'var(--chart-rest)';
+const AVG = 'var(--chart-avg)';
 const GRID = 'var(--border-c)';
 const TICK = { fill: 'var(--muted)', fontSize: 11 } as const;
 
@@ -84,6 +90,22 @@ export default function ChartsPanel({
     [entries, prior, metric],
   );
 
+  // Focus the most recent week that has a value (the live week is usually
+  // still unpaid), and average only weeks that were actually paid.
+  const { focusIndex, average } = useMemo(() => {
+    let focus = -1;
+    let sum = 0;
+    let count = 0;
+    weekly.forEach((p, i) => {
+      if (p.value > 0) {
+        focus = i;
+        sum += p.value;
+        count += 1;
+      }
+    });
+    return { focusIndex: focus, average: count > 0 ? sum / count : null };
+  }, [weekly]);
+
   const metricLabel = metric === 'pay' ? 'pay' : 'hours';
 
   return (
@@ -112,9 +134,20 @@ export default function ChartsPanel({
         </div>
       </div>
 
-      <h4 className="mb-1 text-xs font-medium text-muted">
-        Weekly {metricLabel} — last 12 weeks
-      </h4>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h4 className="text-xs font-medium text-muted">
+          Weekly {metricLabel} — last 12 weeks
+        </h4>
+        {average !== null ? (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums text-(--chart-avg)">
+            <span
+              aria-hidden="true"
+              className="w-3.5 border-t-2 border-dashed border-(--chart-avg)"
+            />
+            avg {fmtValue(metric, average)}
+          </span>
+        ) : null}
+      </div>
       <div className="h-40" aria-label={`Weekly ${metricLabel}, last 12 weeks`}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={weekly} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
@@ -139,11 +172,24 @@ export default function ChartsPanel({
             />
             <Bar
               dataKey="value"
-              fill={MARK}
+              fill={REST}
               radius={[4, 4, 0, 0]}
               maxBarSize={24}
               isAnimationActive={false}
-            />
+            >
+              {weekly.map((p, i) => (
+                <Cell key={p.label} fill={i === focusIndex ? MARK : REST} />
+              ))}
+            </Bar>
+            {average !== null ? (
+              <ReferenceLine
+                y={average}
+                stroke={AVG}
+                strokeWidth={1.5}
+                strokeDasharray="4 4"
+                ifOverflow="extendDomain"
+              />
+            ) : null}
           </BarChart>
         </ResponsiveContainer>
       </div>

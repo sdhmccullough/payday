@@ -352,7 +352,7 @@ export function TimesheetTab() {
           aria-live="polite"
         >
           <span className="text-sm font-bold">Total pay</span>
-          <span className="text-xl font-extrabold text-accent tabular-nums">
+          <span className="text-xl font-extrabold text-accent tabular-nums [text-shadow:var(--glow-accent)]">
             {formatCents(totals.totalCents)}
           </span>
         </div>

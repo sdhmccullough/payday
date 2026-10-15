@@ -43,7 +43,7 @@ export const DayCard = memo(function DayCard({
     <div
       className={`rounded-(--radius-card) border bg-surface p-4 shadow-(--shadow-card) transition ${
         minutes > 0 ? 'border-accent/35' : 'border-line'
-      } ${isToday ? 'ring-1 ring-accent/40' : ''}`}
+      } ${isToday ? 'ring-1 ring-now/60' : ''}`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-baseline gap-2">

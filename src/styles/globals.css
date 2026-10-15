@@ -1,9 +1,10 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
 
-/* ---- design tokens: "calm fintech" -------------------------------------
-   Light is the base; dark applies via system preference or the manual
-   data-theme override. Everything downstream consumes the role vars. */
+/* ---- design tokens ------------------------------------------------------
+   Light ("calm fintech") is the base; dark ("vibrant dark": ink-violet
+   ground, mint = money, violet = now) applies via system preference or the
+   manual data-theme override. Everything downstream consumes the role vars. */
 
 :root {
   --bg: #fafafa;
@@ -19,43 +20,66 @@
   --danger-soft: rgb(220 38 38 / 0.1);
   --warn: #b45309;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.05);
-  /* Chart mark color — emerald-600 passes the dataviz lightness/contrast
-     checks on BOTH surfaces, so it's mode-invariant by design. */
+  /* Chart mark color. Light uses emerald-600; dark brightens it to the mint
+     accent (12.9:1 on the dark surface). */
   --chart-mark: #059669;
+  /* Weekly chart: older weeks recede, the latest paid week carries the mark,
+     a dashed line shows the average. Light keeps its look: rest = mark. */
+  --chart-rest: #059669;
+  --chart-avg: #52525b;
+  /* Text on accent fills, and "now" (today, live punch, focus). */
+  --on-accent: #ffffff;
+  --now: #059669;
+  --glow-accent: none;
+  --glow-button: 0 1px 2px rgb(0 0 0 / 0.05);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #101014;
-    --surface: #17171c;
-    --surface-2: #1f1f26;
-    --border-c: rgb(255 255 255 / 0.09);
-    --text: #f2f2f5;
-    --muted: #9d9da8;
-    --accent: #34d399;
-    --accent-strong: #10b981;
-    --accent-soft: rgb(52 211 153 / 0.12);
-    --danger: #f87171;
-    --danger-soft: rgb(248 113 113 / 0.12);
-    --warn: #fbbf24;
-    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4);
+    --bg: #0a0a12;
+    --surface: #14141f;
+    --surface-2: #1c1c2e;
+    --border-c: rgb(255 255 255 / 0.08);
+    --text: #f4f4fa;
+    --muted: #a6a6c2;
+    --accent: #3df5a7;
+    --accent-strong: #1fe08f;
+    --accent-soft: rgb(61 245 167 / 0.14);
+    --on-accent: #04140c;
+    --now: #a594ff;
+    --danger: #ff6b81;
+    --danger-soft: rgb(255 107 129 / 0.12);
+    --warn: #ffc247;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.5);
+    --glow-accent: 0 0 22px rgb(61 245 167 / 0.35);
+    --glow-button: 0 6px 20px rgb(61 245 167 / 0.25);
+    --chart-mark: #3df5a7;
+    --chart-rest: #3a3a58;
+    --chart-avg: #a594ff;
   }
 }
 
 :root[data-theme='dark'] {
-  --bg: #101014;
-  --surface: #17171c;
-  --surface-2: #1f1f26;
-  --border-c: rgb(255 255 255 / 0.09);
-  --text: #f2f2f5;
-  --muted: #9d9da8;
-  --accent: #34d399;
-  --accent-strong: #10b981;
-  --accent-soft: rgb(52 211 153 / 0.12);
-  --danger: #f87171;
-  --danger-soft: rgb(248 113 113 / 0.12);
-  --warn: #fbbf24;
-  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.4);
+  --bg: #0a0a12;
+  --surface: #14141f;
+  --surface-2: #1c1c2e;
+  --border-c: rgb(255 255 255 / 0.08);
+  --text: #f4f4fa;
+  --muted: #a6a6c2;
+  --accent: #3df5a7;
+  --accent-strong: #1fe08f;
+  --accent-soft: rgb(61 245 167 / 0.14);
+  --on-accent: #04140c;
+  --now: #a594ff;
+  --danger: #ff6b81;
+  --danger-soft: rgb(255 107 129 / 0.12);
+  --warn: #ffc247;
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.5);
+  --glow-accent: 0 0 22px rgb(61 245 167 / 0.35);
+  --glow-button: 0 6px 20px rgb(61 245 167 / 0.25);
+  --chart-mark: #3df5a7;
+  --chart-rest: #3a3a58;
+  --chart-avg: #a594ff;
 }
 
 @theme inline {
@@ -68,6 +92,8 @@
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-now: var(--now);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warn: var(--warn);
@@ -97,7 +123,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--now);
   outline-offset: 2px;
   border-radius: 4px;
 }

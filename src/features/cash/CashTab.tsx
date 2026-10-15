@@ -177,7 +177,7 @@ export function CashTab() {
 
       <div className="flex items-center justify-between rounded-(--radius-card) border border-line bg-surface p-4 shadow-(--shadow-card)">
         <span className="text-sm font-bold">Total cash</span>
-        <span className="text-xl font-extrabold text-accent tabular-nums">
+        <span className="text-xl font-extrabold text-accent tabular-nums [text-shadow:var(--glow-accent)]">
           {formatCents(totalCents)}
         </span>
       </div>

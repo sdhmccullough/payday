@@ -4,7 +4,7 @@ type Variant = 'primary' | 'outline' | 'danger' | 'ghost';
 
 const styles: Record<Variant, string> = {
   primary:
-    'bg-accent-strong text-white hover:brightness-110 active:scale-[0.98] shadow-sm',
+    'bg-accent-strong text-on-accent hover:brightness-110 active:scale-[0.98] shadow-(--glow-button)',
   outline:
     'border border-line bg-surface text-ink hover:bg-surface-2 active:scale-[0.98]',
   danger:
